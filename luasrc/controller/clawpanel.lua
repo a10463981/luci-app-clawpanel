@@ -1,4 +1,4 @@
-﻿-- luci-app-clawpanel controller
+-- luci-app-clawpanel controller
 module("luci.controller.clawpanel", package.seeall)
 
 local function sh(cmd)
