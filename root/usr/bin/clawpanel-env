@@ -49,13 +49,15 @@ get_arch() {
 CP_ARCH=$(get_arch)
 [ -z "$CP_ARCH" ] && { echo "Unsupported architecture: $(uname -m)"; exit 1; }
 
-# Detect download source - always prefer GitHub releases
+# Detect download source - use Chinese mirror proxy for speed
 get_download_url() {
     local ver="$1"
     local arch="$2"
     # Version tag "pro-v5.3.3" → asset filename "clawpanel-v5.3.3-linux-arm64"
     local ver_stripped=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/;s/^v\([0-9]\)/v\1/')
-    echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
+    local raw_url="https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
+    # Use ghproxy.com for China speedup, fallback to raw GitHub
+    echo "https://ghproxy.com/${raw_url}"
 }
 
 # Check disk space
