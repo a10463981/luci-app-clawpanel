@@ -2,13 +2,13 @@
 # clawpanel-env - ClawPanel installation script
 # Env vars:
 #   CP_BASE_PATH      - installation base path (e.g. /mnt/sda1)
-#   CP_VERSION        - version to install (e.g. pro-v5.3.3)
-#   CP_OPENCLAW_DIR   - OpenClaw data directory (e.g. /mnt/sda1/clawpanel/data/.openclaw)
+#   CP_VERSION       - version to install (e.g. pro-v5.3.3), empty = detect latest pro
+#   CP_OPENCLAW_DIR  - OpenClaw data directory (e.g. /mnt/sda1/clawpanel/data/.openclaw)
 
 set -e
 
 CP_BASE_PATH="${CP_BASE_PATH:-/mnt/sda1}"
-CP_VERSION="${CP_VERSION:-latest}"
+CP_VERSION="${CP_VERSION:-}"
 CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-}"
 
 # Check if running as root
@@ -16,22 +16,6 @@ if [ "$(id -u)" != "0" ]; then
     echo "Error: This script must be run as root"
     exit 1
 fi
-
-# Detect system
-detect_system() {
-    if [ -f /etc/openwrt_release ]; then
-        echo "openwrt"
-    elif [ -f /etc/debian_version ]; then
-        echo "debian"
-    elif [ -f /etc/arch-release ]; then
-        echo "arch"
-    else
-        echo "unknown"
-    fi
-}
-
-# Get OS type
-OS_TYPE=$(detect_system)
 
 # Detect architecture
 get_arch() {
@@ -49,23 +33,13 @@ get_arch() {
 CP_ARCH=$(get_arch)
 [ -z "$CP_ARCH" ] && { echo "Unsupported architecture: $(uname -m)"; exit 1; }
 
-# Detect download source - build direct GitHub URL
-get_download_url() {
-    local ver="$1"
-    local arch="$2"
-    # Version tag "pro-v5.3.3" → asset filename "clawpanel-v5.3.3-linux-arm64"
-    local ver_stripped=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/;s/^v\([0-9]\)/v\1/')
-    echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
-}
-
 # Check disk space
 check_disk() {
     local path="$1"
     local needed_mb="${2:-100}"
-
     if [ -d "$path" ]; then
         local avail_mb=$(df -m "$path" | tail -1 | awk '{print $4}')
-        if [ "$avail_mb" -lt "$needed_mb" ]; then
+        if [ -n "$avail_mb" ] && [ "$avail_mb" -lt "$needed_mb" ]; then
             echo "Error: Not enough disk space. Available: ${avail_mb}MB, needed: ${needed_mb}MB"
             return 1
         fi
@@ -77,18 +51,40 @@ create_dirs() {
     local base="$1"
     local data_dir="${2:-${base}/clawpanel/data}"
     local openclaw_dir="${3:-${data_dir}/.openclaw}"
-
-    mkdir -p "$base"
-    mkdir -p "$data_dir"
-    mkdir -p "$openclaw_dir"
-
+    mkdir -p "$base" "$data_dir" "$openclaw_dir"
     echo "Directories created:"
     echo "  - $base"
     echo "  - ${data_dir}"
     echo "  - ${openclaw_dir}"
 }
 
-# Download ClawPanel binary
+# Check if local binary exists and is a valid ELF file
+# Returns 0 (success) if valid, 1 (failure) if not
+check_local_binary() {
+    local path="$1"
+    if [ ! -f "$path" ]; then
+        return 1
+    fi
+    if [ ! -x "$path" ]; then
+        return 1
+    fi
+    # Verify ELF magic bytes: 0x7F 'E' 'L' 'F'
+    local first4
+    first4=$(od -A n -t x1 -N 4 "$path" 2>/dev/null)
+    first4=$(echo "$first4" | tr -d ' \n\r')
+    [ "$first4" = "7f454c46" ]
+}
+
+# Build download URL from version tag
+get_download_url() {
+    local ver="$1"
+    local arch="$2"
+    # "pro-v5.3.3" → asset filename "clawpanel-v5.3.3-linux-arm64"
+    local ver_stripped=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/;s/^v\([0-9]\)/v\1/')
+    echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
+}
+
+# Download binary from URL
 download_binary() {
     local url="$1"
     local dest="$2"
@@ -96,7 +92,7 @@ download_binary() {
     echo "Downloading from: $url"
 
     local tmpfile="/tmp/clawpanel_bin_$$"
-    # Download: -L follow redirects, -s silent, --fail fail on HTTP errors
+    # -L follow redirects, -s silent, --fail fail on HTTP errors
     local http_code
     http_code=$(curl -sL -o "$tmpfile" -w "%{http_code}" --fail --location-timeout 60 "$url" 2>/dev/null)
 
@@ -106,22 +102,22 @@ download_binary() {
         return 1
     fi
 
-    # Check file size: arm64 binary should be >10MB
+    # File must be >10MB for arm64 binary
     local fsize
     fsize=$(wc -c < "$tmpfile" 2>/dev/null || echo "0")
     if [ -z "$fsize" ] || [ "$fsize" -lt 10000000 ]; then
         rm -f "$tmpfile"
-        echo "Error: Downloaded file too small (${fsize} bytes), not a valid binary"
+        echo "Error: Downloaded file too small (${fsize} bytes)"
         return 1
     fi
 
-    # Verify ELF magic bytes: first 4 bytes must be 0x7F 'E' 'L' 'F'
+    # Verify ELF magic
     local first4
     first4=$(od -A n -t x1 -N 4 "$tmpfile" 2>/dev/null)
     first4=$(echo "$first4" | tr -d ' \n\r')
     if [ "$first4" != "7f454c46" ]; then
         rm -f "$tmpfile"
-        echo "Error: File is not a valid ELF binary (magic: $first4)"
+        echo "Error: File is not a valid ELF binary"
         return 1
     fi
 
@@ -131,12 +127,11 @@ download_binary() {
     return 0
 }
 
-# Setup uci config
+# Setup UCI config
 setup_uci() {
     local install_path="$1"
     local port="${2:-19527}"
     local version="$3"
-
     uci set clawpanel.main.enabled='1'
     uci set clawpanel.main.install_path="$install_path"
     uci set clawpanel.main.port="$port"
@@ -145,7 +140,7 @@ setup_uci() {
     echo "UCI configuration saved"
 }
 
-# Main setup function
+# Main setup
 do_setup() {
     local cp_install_path="${CP_BASE_PATH}/clawpanel"
     local cp_data="${CP_BASE_PATH}/clawpanel/data"
@@ -158,66 +153,74 @@ do_setup() {
     echo "OpenClaw data path: ${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
     echo "Port: $cp_port"
     echo "Architecture: $CP_ARCH"
-    echo "Version: $CP_VERSION"
 
-    # Check disk space (need ~100MB)
     check_disk "$CP_BASE_PATH" 100 || exit 1
-
-    # Create directories (pass OpenClaw dir if set)
     create_dirs "$CP_BASE_PATH" "$cp_data" "${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
 
     # Determine version
-    # Determine version - default to pro-v5.3.3 (stable) to avoid GitHub API issues
     local ver="$CP_VERSION"
-    if [ "$ver" = "latest" ] || [ -z "$ver" ]; then
-        # Try GitHub API with short timeout
+    if [ -z "$ver" ] || [ "$ver" = "latest" ]; then
         echo "Detecting latest pro version..."
-        ver=$(curl -sL --max-time 5 "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null | grep '"tag_name"' | head -5 | cut -d'"' -f4 | grep '^pro-' | head -1 || echo "")
+        ver=$(curl -sL --max-time 8 \
+            "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null \
+            | grep '"tag_name"' | head -10 | cut -d'"' -f4 \
+            | grep '^pro-' | head -1 || echo "")
         if [ -z "$ver" ] || ! echo "$ver" | grep -q '^pro-'; then
             ver="pro-v5.3.3"
-            echo "Using stable default: $ver"
+            echo "Using default version: $ver"
         else
             echo "Latest pro version: $ver"
         fi
     fi
 
-    # Download binary
-    local download_url
-    download_url=$(get_download_url "$ver" "$CP_ARCH")
-    download_binary "$download_url" "$cp_binary" || exit 1
+    # Step 1: Check if local binary already exists and is valid
+    if check_local_binary "$cp_binary"; then
+        local local_ver
+        local_ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "unknown")
+        echo "Found local binary: $cp_binary (version: $local_ver)"
+        echo "Skipping download, using existing binary."
+        echo "$ver" > "${cp_install_path}/.version"
+    else
+        echo "No valid local binary found, downloading..."
+        local download_url
+        download_url=$(get_download_url "$ver" "$CP_ARCH")
+        download_binary "$download_url" "$cp_binary" || exit 1
+        echo "$ver" > "${cp_install_path}/.version"
+    fi
 
     # Get actual version
-    local actual_ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "$ver")
-    echo "ClawPanel version: $actual_ver"
-    echo "$actual_ver" > "${cp_install_path}/.version"
+    local actual_ver
+    actual_ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "$ver")
+    echo "ClawPanel binary version: $actual_ver"
 
-    # Save OpenClaw data path to file if specified
+    # Save OpenClaw data path
     if [ -n "$CP_OPENCLAW_DIR" ]; then
         echo "$CP_OPENCLAW_DIR" > "${cp_install_path}/.openclaw_path"
-        echo "OpenClaw data path saved: $CP_OPENCLAW_DIR"
+        echo "OpenClaw data path: $CP_OPENCLAW_DIR"
+    fi
+
+    # Save openclaw_dir to UCI so init.d can read it
+    if [ -n "$CP_OPENCLAW_DIR" ]; then
+        uci set clawpanel.main.openclaw_dir="$CP_OPENCLAW_DIR" 2>/dev/null
+        uci commit clawpanel 2>/dev/null
     fi
 
     # Setup UCI
     setup_uci "$CP_BASE_PATH" "$cp_port" "$actual_ver"
 
-    # Enable and start service
-    echo "Enabling service..."
+    # Enable and start
+    echo "Starting ClawPanel..."
     /etc/init.d/clawpanel enable 2>/dev/null
     /etc/init.d/clawpanel start >/dev/null 2>&1
 
     echo "ClawPanel installation successful!"
-    echo "Installed at: $cp_binary"
-    echo "Data at: $cp_data"
+    echo "Installed: $cp_binary"
+    echo "Data: $cp_data"
+    echo "OpenClaw: ${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
     echo "Port: $cp_port"
 }
 
-# Main entry
 case "${1:-setup}" in
-    setup)
-        do_setup
-        ;;
-    *)
-        echo "Usage: $0 [setup]"
-        exit 1
-        ;;
+    setup) do_setup ;;
+    *) echo "Usage: $0 [setup]"; exit 1 ;;
 esac
