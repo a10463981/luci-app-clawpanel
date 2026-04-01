@@ -63,7 +63,9 @@ function action_status()
 		enabled = enabled,
 		port = port,
 		install_path = install_path,
-		openclaw_path = openclaw_path,
+		openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or "",
+		openclaw_app = uci:get("clawpanel", "main", "openclaw_app") or "",
+		openclaw_work = uci:get("clawpanel", "main", "openclaw_work") or "",
 		panel_running = false,
 		pid = "",
 		memory_kb = 0,
@@ -205,11 +207,21 @@ function action_service_ctl()
 		-- Save install path to UCI
 		sh("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
 
-		-- Save openclaw path to UCI (NEW)
-		local openclaw_path = http.formvalue("openclaw_path") or ""
-		if openclaw_path ~= "" then
-			openclaw_path = openclaw_path:gsub("[`$;&|<>]", ""):gsub("/+$", "")
-			sh("uci set clawpanel.main.openclaw_path='" .. openclaw_path .. "'; uci commit clawpanel 2>/dev/null")
+		-- Save openclaw paths to UCI (all are optional - empty uses defaults)
+		local openclaw_dir = http.formvalue("openclaw_dir") or ""
+		local openclaw_app = http.formvalue("openclaw_app") or ""
+		local openclaw_work = http.formvalue("openclaw_work") or ""
+		if openclaw_dir ~= "" then
+			openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", "")
+			sh("uci set clawpanel.main.openclaw_dir='" .. openclaw_dir .. "'; uci commit clawpanel 2>/dev/null")
+		end
+		if openclaw_app ~= "" then
+			openclaw_app = openclaw_app:gsub("[^%w%-%./]", "")
+			sh("uci set clawpanel.main.openclaw_app='" .. openclaw_app .. "'; uci commit clawpanel 2>/dev/null")
+		end
+		if openclaw_work ~= "" then
+			openclaw_work = openclaw_work:gsub("[^%w%-%./]", "")
+			sh("uci set clawpanel.main.openclaw_work='" .. openclaw_work .. "'; uci commit clawpanel 2>/dev/null")
 		end
 
 		local env_prefix = ""
