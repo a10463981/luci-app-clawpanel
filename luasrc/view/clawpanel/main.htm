@@ -3,8 +3,13 @@ luci-app-clawpanel - OpenWrt LuCI Basic Configuration Template
 %>
 <%
 local uci = require("luci.model.uci").cursor()
+local dispatcher = require "luci.dispatcher"
+local sys = require "luci.sys"
 local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
 local port = uci:get("clawpanel", "main", "port") or "19527"
+-- Get LAN IP safely
+local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface lan' | grep 'ipaddr' | cut -d\"'\" -f2") or ""
+if lan_addr == "" then lan_addr = "192.168.1.1" end
 %>
 <%+header%>
 
@@ -95,13 +100,13 @@ local port = uci:get("clawpanel", "main", "port") or "19527"
 <button class="cp-btn cp-btn-action" onclick="doSvc('stop')">Stop</button>
 <button class="cp-btn cp-btn-action" onclick="doSvc('start')">Start</button>
 <button class="cp-btn cp-btn-remove" onclick="doUninstall()">Uninstall</button>
-<a href="http://<%=luci.ip.getenv('LAN_ADDR') or '192.168.1.1'%>:<%=port%>" target="_blank" class="cp-btn cp-btn-web">Open ClawPanel</a>
+<a href="http://<%=lan_addr%>:<%=port%>" target="_blank" class="cp-btn cp-btn-web">Open ClawPanel</a>
 <button class="cp-btn cp-btn-action" onclick="updateStatus()" style="float:right">Refresh Status</button>
 </div>
 
 <div id="cp-hint">
 <strong>Installation Tips:</strong><br>
-Open ClawPanel at <a href="http://<%=luci.ip.getenv('LAN_ADDR') or '192.168.1.1'%>:<%=port%>" target="_blank">http://<%=luci.ip.getenv('LAN_ADDR') or '192.168.1.1'%>:<%=port%></a><br>
+Open ClawPanel at <a href="http://<%=lan_addr%>:<%=port%>" target="_blank">http://<%=lan_addr%>:<%=port%></a><br>
 <strong>Recommended path:</strong> Use external storage mount points like <code>/mnt/sda1</code>, <code>/mnt/data</code>, <code>/storage</code>. System paths are blocked.
 </div>
 
