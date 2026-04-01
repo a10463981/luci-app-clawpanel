@@ -13,9 +13,25 @@ local function trim(s)
 	return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
--- 甯﹁秴鏃剁殑 shell 鎵ц锛岄伩鍏嶉樆濉烇紙clawpanel --version 浼氳仈缃戞娴嬫洿鏂帮紝蹇呴』鍔犺秴鏃讹級
+-- Timeout wrapper: uses `timeout` if available; otherwise plain popen (no block protection)
+-- iStoreOS BusyBox has no `timeout` cmd, so the else branch handles it
 local function sh_timed(cmd, timeout_sec)
 	timeout_sec = timeout_sec or 5
+	-- Check if `timeout` command exists
+	if os.execute("command -v timeout >/dev/null 2>&1") ~= 0 then
+		-- No timeout cmd available; run without time limit (caller should handle this)
+		local f = io.popen(cmd .. " 2>/dev/null")
+		if not f then return "" end
+		local out = ""
+		while true do
+			local line = f:read("*l")
+			if not line then break end
+			out = out .. line .. "\n"
+		end
+		f:close()
+		return out
+	end
+	-- `timeout` available: use it
 	local f = io.popen("timeout -t " .. timeout_sec .. " " .. cmd .. " 2>/dev/null")
 	if not f then return "" end
 	local out = f:read("*a")
@@ -78,16 +94,22 @@ function action_status()
 		uptime = "",
 		panel_version = "",
 		installed_version = "",
+		openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or "",
 		disk_free = ""
 	}
 
 	if cp_bin ~= "" and install_path ~= "" then
-		local v = trim(sh_timed(cp_bin .. " --version", 5))
-		if v and v ~= "" then result.panel_version = v end
+		-- Read .version file first (fast, written at install time)
 		local vf = io.open(install_path .. "/clawpanel/.version", "r")
 		if vf then
-			result.installed_version = trim(vf:read("*a"))
+			local fver = trim(vf:read("*a"))
 			vf:close()
+			if fver ~= "" then result.panel_version = fver end
+		end
+		-- Fallback: call --version only if .version is empty
+		if result.panel_version == "" then
+			local v = trim(sh_timed(cp_bin .. " --version", 5))
+			if v and v ~= "" then result.panel_version = v end
 		end
 	end
 
@@ -208,28 +230,25 @@ function action_service_ctl()
 
 		local version = http.formvalue("version") or ""
 		local install_path = http.formvalue("install_path") or ""
-		-- Sanitize: only allow safe chars
 		install_path = install_path:gsub("[^%w%-%./]", ""):gsub("/+$", "")
 
 		if install_path == "" then
 			http.prepare_content("application/json")
-			http.write_json({ status = "error", message = "瀹夎璺緞涓嶈兘涓虹┖" })
+			http.write_json({ status = "error", message = "install_path cannot be empty" })
 			return
 		end
 
-		-- 鐢ㄦ埛鍙€夎缃?OpenClaw 鏁版嵁鐩綍锛岀暀绌哄垯鑷姩鎺ㄥ涓?<install_path>/clawpanel/data
 		local openclaw_dir = http.formvalue("openclaw_dir") or ""
 		openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", "")
 		if openclaw_dir == "" then
-			-- 鑷姩鎺ㄥ锛氳窡闅忓畨瑁呰矾寰?			openclaw_dir = install_path .. "/clawpanel/data"
+			openclaw_dir = install_path .. "/clawpanel/data"
 		end
 
-		-- 淇濆瓨鍒?UCI
 		sh("uci set clawpanel.main.install_path='" .. install_path .. "'")
 		sh("uci set clawpanel.main.openclaw_dir='" .. openclaw_dir .. "'")
 		sh("uci commit clawpanel 2>/dev/null")
 
-		-- 閫氳繃鐜鍙橀噺浼犵粰 clawpanel-env锛堜笉杩?UCI 宸茬粡淇濆瓨浜嗭紝鑴氭湰閲屼細璇?UCI锛?		local env_prefix = ""
+		local env_prefix = ""
 		if version ~= "" and version ~= "latest" then
 			env_prefix = "CP_VERSION=" .. version .. " "
 		end
@@ -237,7 +256,7 @@ function action_service_ctl()
 		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' CP_OPENCLAW_DIR='" .. openclaw_dir .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
 
 		http.prepare_content("application/json")
-		http.write_json({ status = "ok", message = "瀹夎宸插紑濮嬶紝璇风瓑寰?.." })
+		http.write_json({ status = "ok", message = "Installation started in background. Please wait..." })
 
 	else
 		http.prepare_content("application/json")
@@ -280,7 +299,7 @@ function action_setup_log()
 
 	local state = "idle"
 	if running then
-		if log:match("success") or log:match("successful") or log:match("installed") or log:match("瀹夎鎴愬姛") or log:match("瀹屾垚") then
+		if log:match("success") or log:match("successful") or log:match("installed") or log:match("complete") then
 			state = "success"
 		else
 			state = "running"

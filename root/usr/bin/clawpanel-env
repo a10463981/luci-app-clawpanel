@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 # clawpanel-env - auto install ClawPanel from GitHub releases
 # Env vars:
 #   CP_BASE_PATH      installation base path
@@ -14,7 +14,7 @@ CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-}"
 [ "$(id -u)" = "0" ] || { echo "Error: must run as root"; exit 1; }
 [ -n "$CP_BASE_PATH" ] || { echo "Error: CP_BASE_PATH not set"; exit 1; }
 
-# ── Timeout wrapper ( BusyBox-compatible ) ─────────────────────────────────────
+# 鈹€鈹€ Timeout wrapper ( BusyBox-compatible ) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 # Usage: timeout_wrapper <seconds> <command>...
 _timeout_cmd() {
     local secs="$1"; shift
@@ -117,7 +117,7 @@ download_binary() {
 
     mv -f "$tmpfile" "$dest"
     chmod +x "$dest"
-    echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') → $dest"
+    echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') 鈫?$dest"
 }
 
 do_setup() {
@@ -125,7 +125,7 @@ do_setup() {
     local cp_data="${cp_install_path}/data"
     local cp_binary="${cp_install_path}/clawpanel"
     local cp_port="${CP_PORT:-19527}"
-    # OpenClaw 目录：如果环境变量未设置，自动推导为 <install_path>/clawpanel/data
+    # OpenClaw 鐩綍锛氬鏋滅幆澧冨彉閲忔湭璁剧疆锛岃嚜鍔ㄦ帹瀵间负 <install_path>/clawpanel/data
     local openclaw_dir="${CP_OPENCLAW_DIR:-${cp_data}}"
     local openclaw_app="${CP_BASE_PATH}/clawpanel/app"
     local openclaw_work="${CP_BASE_PATH}/clawpanel/work"
@@ -151,27 +151,19 @@ do_setup() {
     url=$(get_download_url "$version" "$CP_ARCH")
     download_binary "$url" "$cp_binary" || exit 1
 
-    # 读取版本号：优先从已知的 GitHub 版本读取（避免 binary --version 网络超时）
-    # ClawPanel 的 --version 会联网检测更新，可能非常慢
+    # 鐩存帴浣跨敤 GitHub API 鐗堟湰鍙凤紙涓嶇敤 binary --version锛岄伩鍏嶈仈缃戣秴鏃跺崱浣忥級
     local actual_ver="$version"
-    local _ver
-    if _ver=$(_timeout_cmd 5 "$cp_binary" --version 2>/dev/null | head -1); then
-        actual_ver="$_ver"
-    else
-        echo "Warning: could not read version from binary (timeout or error), using: $version"
-    fi
     echo "$actual_ver" > "${cp_install_path}/.version"
     echo "Version: $actual_ver"
 
-    # 保存到 UCI（供 init.d 后续启动使用）
-    uci set clawpanel.main.enabled='1'
+    # 淇濆瓨鍒?UCI锛堜緵 init.d 鍚庣画鍚姩浣跨敤锛?    uci set clawpanel.main.enabled='1'
     uci set clawpanel.main.install_path="$CP_BASE_PATH"
     uci set clawpanel.main.openclaw_dir="$openclaw_dir"
     uci set clawpanel.main.port="$cp_port"
     uci set clawpanel.main.version="$actual_ver"
     uci commit clawpanel
 
-    # 写入 clawpanel.json（由 init 脚本 start_service 再次覆盖，这里先写一次保护）
+    # 鍐欏叆 clawpanel.json锛堢敱 init 鑴氭湰 start_service 鍐嶆瑕嗙洊锛岃繖閲屽厛鍐欎竴娆′繚鎶わ級
     cat > "${cp_data}/clawpanel.json" <<EOF
 {
   "port": ${cp_port},
@@ -187,8 +179,7 @@ do_setup() {
 EOF
     echo "Config written: ${cp_data}/clawpanel.json"
 
-    # 启动 ClawPanel（init 脚本会自动再次写入正确的 clawpanel.json）
-    echo "Starting ClawPanel..."
+    # 鍚姩 ClawPanel锛坕nit 鑴氭湰浼氳嚜鍔ㄥ啀娆″啓鍏ユ纭殑 clawpanel.json锛?    echo "Starting ClawPanel..."
     /etc/init.d/clawpanel enable 2>/dev/null || true
     _timeout_cmd 10 /etc/init.d/clawpanel start || true
 
