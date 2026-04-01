@@ -5,25 +5,26 @@
 #   clawpanel-env setup     — 完整安装 ClawPanel
 #   clawpanel-env check     — 检查环境状态
 #   clawpanel-env mounts    — 列出可用存储设备
-#   clawpanel-env version   — 获取最新版本号
 # 环境变量:
 #   CP_VERSION    — 指定 ClawPanel 版本，不设置则安装最新版
 #   CP_BASE_PATH  — 指定安装路径（必须为外置存储挂载点）
+#   CP_EDITION   — pro 或 lite（默认 pro；ARM64 路由器只能选 pro）
 # ============================================================================
 set -e
 
 # ── 版本配置 ──
 CP_VERSION="${CP_VERSION:-}"
 CP_BASE_PATH="${CP_BASE_PATH:-}"
+CP_EDITION="${CP_EDITION:-pro}"
+
+# 安装路径
 CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
 CP_DATA="${CP_INSTALL_PATH}/data"
 CP_BIN="${CP_INSTALL_PATH}/clawpanel"
 
-# ClawPanel GitHub
+# GitHub
 CP_REPO="zhaoxinyi02/ClawPanel"
 CP_DOWNLOAD_BASE="https://github.com/${CP_REPO}/releases/download"
-
-# Gitee 镜像（GitHub 访问不稳定时使用）
 CP_GITEE_BASE="https://gitee.com/zxy000006/ClawPanel/raw/main/release"
 
 # ── 不允许安装到的危险路径（系统分区）──
@@ -75,16 +76,33 @@ detect_os() {
 
 # ── 获取最新版本号 ──
 get_latest_version() {
+	local edition="${1:-pro}"
+	# 先尝试 GitHub API
 	local ver
 	ver=$(curl -sf --connect-timeout 8 --max-time 15 \
 		"https://api.github.com/repos/${CP_REPO}/releases/latest" \
 		2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/' | tr -d '[:space:]')
+
+	# API 失败，尝试抓取 releases 页面 HTML
+	if [ -z "$ver" ]; then
+		ver=$(curl -sf --connect-timeout 15 --max-time 30 \
+			"https://github.com/${CP_REPO}/releases" \
+			2>/dev/null | grep -oE 'href="/'"${CP_REPO}"'/releases/tag/'"${edition}"'-[a-zA-Z0-9._-]+' \
+			| head -1 | sed 's|.*/releases/tag/||')
+	fi
+
+	# 仍失败，尝试 Gitee
 	if [ -z "$ver" ]; then
 		ver=$(curl -sf --connect-timeout 8 --max-time 15 \
 			"https://gitee.com/api/v5/repos/zxy000006/ClawPanel/releases/latest" \
 			2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/' | tr -d '[:space:]')
 	fi
-	echo "${ver}"
+
+	# 严格验证：tag 必须以 edition- 开头
+	case "$ver" in
+		${edition}-*) echo "${ver}" ;;
+		*) echo "" ;;
+	esac
 }
 
 # ── 列出可用外置存储挂载点 ──
@@ -225,45 +243,44 @@ do_setup() {
 	local version="$CP_VERSION"
 	if [ -z "$version" ]; then
 		log_info "获取最新版本..."
-		version=$(get_latest_version)
+		version=$(get_latest_version "$CP_EDITION")
 		if [ -z "$version" ]; then
 			log_error "无法获取最新版本，请检查网络连接"
 			return 1
 		fi
+		log_info "检测到最新版本: $version"
 	fi
 
-	# 去掉 .tr.gz 后缀（这是 tag 后缀，不是二进制文件名的一部分）
-	local base_version="${version%.tr.gz}"
-
-	# 清理可能多出的 v 前缀：tag 可能已经是 v5.2.8 或 vro-v5.2.8 格式
-	# 二进制文件名规范：clawpanel-v{base_version}-linux-{arch}
-	# 如果 base_version 已经是 v 开头，直接使用；否则补 v
-	case "$base_version" in
-		v*) local filename_ver="$base_version" ;;
-		*)  local filename_ver="v$base_version" ;;
-	esac
-
-	log_info "目标版本: $base_version"
-
-	# ── 确定下载文件名 ──
-	local os_name="linux"
-	local filename=""
-	case "${os_name}-${arch}" in
-		linux-amd64)   filename="clawpanel-${filename_ver}-linux-amd64" ;;
-		linux-arm64)   filename="clawpanel-${filename_ver}-linux-arm64" ;;
-		linux-armhf)   filename="clawpanel-${filename_ver}-linux-armhf" ;;
-		linux-armv6)   filename="clawpanel-${filename_ver}-linux-armv6" ;;
-		linux-386)     filename="clawpanel-${filename_ver}-linux-386" ;;
-		linux-mips)    filename="clawpanel-${filename_ver}-linux-mips" ;;
-		linux-mipsle)  filename="clawpanel-${filename_ver}-linux-mipsle" ;;
+	# 验证 version 以 edition- 开头
+	case "$version" in
+		${CP_EDITION}-*) ;;
 		*)
-			log_error "当前架构 ($arch) 暂不支持"
+			log_error "版本 $version 与 edition($CP_EDITION) 不匹配，请指定正确版本"
 			return 1
 			;;
 	esac
 
-	# 下载 URL：tag 是 base_version，文件是 filename
-	local download_url="${CP_DOWNLOAD_BASE}/${base_version}/${filename}"
+	# 从 tag 提取纯版本号（如 pro-v5.3.3 → 5.3.3，lite-v0.2.3 → 0.2.3）
+	local base_version="${version#${CP_EDITION}-}"
+
+	# 确定 CPU 架构
+	local arch=$(detect_arch)
+	local os_name="linux"
+
+	# 确定二进制文件名
+	# Pro: clawpanel-{ver}-linux-{arch}   (ver = v5.3.3)
+	# Lite: clawpanel-lite-core-{ver}-linux-{arch} (ver = v0.2.3)
+	local filename=""
+	if [ "$CP_EDITION" = "lite" ]; then
+		filename="clawpanel-lite-core-${base_version}-${os_name}-${arch}.tar.gz"
+	else
+		filename="clawpanel-${base_version}-${os_name}-${arch}"
+	fi
+
+	log_info "下载文件: $filename"
+
+	# 下载 URL
+	local download_url="${CP_DOWNLOAD_BASE}/${version}/${filename}"
 	log_info "下载链接: $download_url"
 
 	# ── 检查磁盘空间（需要 ≥ 500MB）──
@@ -308,7 +325,33 @@ do_setup() {
 	if [ -f "$CP_BIN" ]; then
 		mv "$CP_BIN" "${CP_BIN}.bak" 2>/dev/null || true
 	fi
-	mv "$tmpfile" "$CP_BIN"
+
+	# 判断是 tar.gz 包还是直接二进制
+	local first_bytes=$(head -c 2 "$tmpfile" 2>/dev/null | xxd -p 2>/dev/null || echo "")
+	if [ "$first_bytes" = "1f8b" ]; then
+		# tar.gz 格式（Lite）——解压
+		log_info "解压 Lite 安装包..."
+		if ! tar -xzf "$tmpfile" -C /tmp 2>/dev/null; then
+			log_error "解压失败"
+			rm -f "$tmpfile"
+			return 1
+		fi
+		# 查找解压出来的二进制文件
+		local bin_path=$(find /tmp -name "clawpanel*" -type f -executable 2>/dev/null | head -1)
+		if [ -z "$bin_path" ] || [ ! -x "$bin_path" ]; then
+			log_error "解压后未找到可执行文件"
+			rm -f "$tmpfile"
+			return 1
+		fi
+		log_info "找到二进制: $bin_path"
+		mv "$bin_path" "$CP_BIN"
+		rm -f "$tmpfile"
+		# 清理临时解压文件
+		rm -rf /tmp/clawpanel* 2>/dev/null || true
+	else
+		# 直接二进制（Pro）
+		mv "$tmpfile" "$CP_BIN"
+	fi
 	chmod +x "$CP_BIN"
 
 	# ── 创建目录结构 ──
@@ -325,7 +368,7 @@ do_setup() {
 	# ── 验证安装 ──
 	local installed_ver=$("$CP_BIN" --version 2>/dev/null | tr -d '[:space:]' || echo "unknown")
 	log_info "安装完成!"
-	log_info "ClawPanel 版本: $installed_ver"
+	log_info "ClawPanel 版本: $base_version ($CP_EDITION)"
 	log_info "程序目录: $CP_INSTALL_PATH"
 	log_info "数据目录: $CP_DATA"
 	log_info "监听端口: 19527"
@@ -341,7 +384,7 @@ do_setup() {
 	echo ""
 	echo "=========================================="
 	echo "  ClawPanel 安装成功!"
-	echo "  版本: ${base_version}"
+	echo "  版本: ${base_version} (${CP_EDITION})"
 	echo "  程序: $CP_INSTALL_PATH"
 	echo "  数据: $CP_DATA"
 	echo "  访问地址: http://路由器IP:19527"
