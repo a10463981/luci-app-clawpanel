@@ -462,11 +462,21 @@ function action_mounts()
 		end
 
 		if fs and mp then
-			if mp == "/" or mp == "/overlay" or mp == "/rom" or mp == "/boot"
-				or mp == "/tmp" or mp == "/var" or mp == "/run"
-				or fs:match("^tmpfs$") or fs:match("^devpts$") or fs:match("^proc$")
-				or not mp:match("^/") then
-				-- skip
+			-- 跳过系统保留挂载点
+			local skip = false
+			if mp == "/" then skip = true end
+			if mp == "/overlay" then skip = true end
+			if mp == "/rom" then skip = true end
+			if mp == "/boot" then skip = true end
+			if mp == "/tmp" then skip = true end
+			if mp == "/var" then skip = true end
+			if mp == "/run" then skip = true end
+			if not skip and fs == "tmpfs" then skip = true end
+			if not skip and fs == "devpts" then skip = true end
+			if not skip and fs == "proc" then skip = true end
+			if not skip and not mp:match("^/") then skip = true end
+			if skip then
+				-- 系统挂载点，跳过
 			else
 				local avail_mb = 0
 				if avail then
@@ -475,17 +485,16 @@ function action_mounts()
 						avail_mb = tonumber(num) * 1024 * 1024
 					elseif avail:match("G") then
 						avail_mb = tonumber(num) * 1024
-					else
+					elseif num then
 						avail_mb = tonumber(num) or 0
 					end
 				end
-
 				if avail_mb >= 100 then
 					mounts[#mounts + 1] = {
 						mount = mp,
 						size = avail,
 						avail_mb = math.floor(avail_mb),
-						fs = fs or "unknown"
+						fs = fs
 					}
 				end
 			end
