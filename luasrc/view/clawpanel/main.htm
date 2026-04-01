@@ -17,21 +17,19 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 #cp-panel td{padding:8px 16px;border-bottom:1px solid #f2f2f2;font-size:13px}
 #cp-panel td:first-child{width:120px;color:#888;font-weight:500}
 #cp-panel tr:last-child td{border-bottom:none}
-.cp-btn{padding:6px 14px;border-radius:6px;font-size:13px;color:#fff;border:none;cursor:pointer;display:inline-block;text-decoration:none}
+.cp-btn{padding:6px 14px;border-radius:6px;font-size:13px;color:#fff;border:none;cursor:pointer;display:inline-block}
 .cp-btn-apply{background:#4a90d9}.cp-btn-apply:hover{background:#357abd}
 .cp-btn-action{background:#6c757d}.cp-btn-action:hover{background:#545b62}
 .cp-btn-remove{background:#cf222e}.cp-btn-remove:hover{background:#a40e26}
 .cp-btn-web{background:#1a7f37}.cp-btn-web:hover{background:#155d27}
-.cp-btn:hover{opacity:0.85}
 .cp-badge{display:inline-block;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
 .cp-badge-unknown{background:#f0f0f0;color:#656d76}
 .cp-badge-running{background:#e6f7e9;color:#1a7f37}
 .cp-badge-stopped{background:#fff0e6;color:#cf222e}
-.cp-badge-enabling{background:#fff0e6;color:#9a6700}
 .cp-badge-disabled{background:#f0f0f0;color:#656d76}
-#cp-path{margin-bottom:14px;display:flex;align-items:center;gap:10px}
+#cp-path{margin-bottom:14px}
 #cp-path label{font-size:13px;color:#555}
-#cp-path input{flex:1;max-width:260px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
+#cp-path input{width:260px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
 #cp-actions{margin-bottom:14px}
 #cp-actions .cp-btn{margin-right:8px}
 #cp-hint{border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;font-size:13px;line-height:1.8}
@@ -39,41 +37,27 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 
 #cp-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:99999;align-items:center;justify-content:center}
 #cp-modal.show{display:flex}
-#cp-modal .modal-box{background:#1e1e1e;border-radius:12px;padding:0;max-width:700px;width:95%;box-shadow:0 12px 40px rgba(0,0,0,.7);max-height:88vh;overflow:hidden;display:flex;flex-direction:column}
-#cp-modal .modal-hdr{display:flex;align-items:center;padding:10px 14px;background:#2d2d2d;border-bottom:1px solid #444;border-radius:12px 12px 0 0}
-#cp-modal .modal-hdr .mh-title{color:#ccc;font-size:13px;flex:1;font-family:monospace}
-#cp-modal .modal-hdr .mh-close{color:#888;background:none;border:none;font-size:20px;cursor:pointer;padding:0 4px}
-#cp-modal .modal-hdr .mh-close:hover{color:#fff}
-#cp-modal .modal-body{flex:1;overflow-y:auto;padding:12px 16px;font-family:'Courier New',Consolas,monospace;font-size:12px;line-height:1.7;color:#d4d4d4;background:#1e1e1e;min-height:200px;max-height:55vh}
-#cp-modal .modal-body pre{margin:0;white-space:pre-wrap;word-break:break-all}
-#cp-modal .modal-foot{padding:8px 14px;background:#2d2d2d;border-top:1px solid #444;border-radius:0 0 12px 12px}
-#cp-modal .mh-status{font-size:12px}
-#cp-modal .ok{color:#4a90d9}
-#cp-modal .err{color:#cf222e}
-#cp-modal .warn{color:#f0c674}
-#cp-modal .dim{color:#888}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-.b{animation:blink 1s infinite}
+#cp-modal .modal-box{background:#1e1e1e;border-radius:12px;padding:0;max-width:600px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.7)}
+#cp-modal .modal-hdr{background:#2d2d2d;padding:12px 16px;border-radius:12px 12px 0 0}
+#cp-modal .modal-hdr .mh-title{color:#ccc;font-size:14px;font-weight:600}
+#cp-modal .modal-body{padding:16px;font-family:monospace;font-size:13px;color:#d4d4d4;background:#1e1e1e;min-height:80px}
+#cp-modal .modal-foot{padding:12px 16px;background:#2d2d2d;border-radius:0 0 12px 12px;text-align:right}
+#cp-modal .modal-status{color:#f0c674;font-size:12px;margin-bottom:8px}
+#cp-modal .modal-success{color:#1a7f37}
+#cp-modal .modal-error{color:#cf222e}
 </style>
-
-<!-- Hidden iframe for fire-and-forget form submissions -->
-<iframe name="cp_hidden_frame" style="display:none" sandbox=""></iframe>
 
 <div id="cp-modal">
 <div class="modal-box">
-<div class="modal-hdr">
-<span class="mh-title" id="cp-modal-title">ClawPanel</span>
-<span class="mh-status" id="cp-modal-status" style="color:#888;font-size:12px;margin-right:10px"></span>
-<button class="mh-close" id="cp-modal-close" title="关闭">&#215;</button>
+<div class="modal-hdr"><span class="mh-title" id="cp-modal-title">ClawPanel</span></div>
+<div class="modal-body">
+<div class="modal-status" id="cp-modal-status"></div>
+<div id="cp-modal-content"></div>
 </div>
-<div class="modal-body" id="cp-modal-log"><pre id="cp-modal-log-content"></pre></div>
-<div class="modal-foot">
-<button class="cp-btn cp-btn-action" id="cp-modal-okbtn" style="display:none" onclick="cpModalClose()">关闭</button>
-</div>
+<div class="modal-foot"><button class="cp-btn cp-btn-action" onclick="cpModalClose()">关闭</button></div>
 </div>
 </div>
 
-<!-- Main Panel -->
 <div id="cp-panel">
 <div class="panel-title">ClawPanel 服务控制</div>
 <table>
@@ -90,7 +74,7 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 
 <div id="cp-path">
 <label>安装路径：</label>
-<input type="text" id="f-path" value="<%=install_path%>" placeholder="/mnt/sda1">
+<input type="text" id="f-path" value="<%=install_path%>">
 </div>
 
 <div id="cp-actions">
@@ -104,273 +88,115 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 </div>
 
 <div id="cp-hint">
-<strong>安装提示：</strong><br>
-打开 ClawPanel：<button class="cp-btn cp-btn-web" style="font-size:12px;padding:2px 10px" onclick="window.open('http://<%=lan_addr%>:<%=port%>', '_blank')">http://<%=lan_addr%>:<%=port%></button><br>
-<strong>建议路径：</strong>使用外置存储挂载点，如 <code>/mnt/sda1</code>、<code>/mnt/data</code>、<code>/storage</code>。系统路径已被屏蔽。
+<strong>安装提示：</strong> 打开 ClawPanel：<button class="cp-btn cp-btn-web" style="font-size:12px;padding:2px 10px" onclick="window.open('http://<%=lan_addr%>:<%=port%>', '_blank')">http://<%=lan_addr%>:<%=port%></button><br>
+<strong>建议路径：</strong>使用外置存储挂载点，如 <code>/mnt/sda1</code>、<code>/mnt/data</code>、<code>/storage</code>。
 </div>
 
 <script type="text/javascript">
-//<![CDATA[
 var BASE = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>';
-var modalTimer = null;
-var modalPollTimer = null;
-
 function $(id) { return document.getElementById(id); }
 
-function hl(text) {
-    if (!text) return '';
-    return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/\n/g, '<br>');
-}
-
-function showModal(title, initialText, statusText) {
-    if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
-    if (modalTimer) { clearTimeout(modalTimer); modalTimer = null; }
-    $('cp-modal-title').textContent = title || 'ClawPanel';
-    $('cp-modal-log-content').innerHTML = hl(initialText || '...');
-    $('cp-modal-status').textContent = statusText || '';
-    $('cp-modal-status').style.color = '#888';
-    $('cp-modal-okbtn').style.display = 'none';
+function showModal(title, status, content) {
+    $('cp-modal-title').textContent = title;
+    $('cp-modal-status').textContent = status || '';
+    $('cp-modal-status').className = 'modal-status';
+    $('cp-modal-content').innerHTML = content || '';
     $('cp-modal').classList.add('show');
 }
 
-function appendLog(text) {
-    var el = $('cp-modal-log-content');
-    el.innerHTML = hl(text);
-    $('cp-modal-log').scrollTop = $('cp-modal-log').scrollHeight;
-}
-
-function setModalStatus(text, color) {
-    $('cp-modal-status').textContent = text || '';
-    $('cp-modal-status').style.color = color || '#888';
-}
-
-function showModalSuccess(title, text) {
-    $('cp-modal-title').textContent = title || 'ClawPanel';
-    appendLog(text || '\u5b8c\u6210\uff01');
-    setModalStatus('\u6210\u529f', '#1a7f37');
-    $('cp-modal-okbtn').style.display = 'inline-block';
-}
-
-function showModalError(title, text) {
-    $('cp-modal-title').textContent = title || 'ClawPanel - \u9519\u8bef';
-    appendLog(text || '\u5931\u8d25\uff01');
-    setModalStatus('\u5931\u8d25', '#cf222e');
-    $('cp-modal-okbtn').style.display = 'inline-block';
-}
-
 function cpModalClose() {
-    if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
-    if (modalTimer) { clearTimeout(modalTimer); modalTimer = null; }
     $('cp-modal').classList.remove('show');
     updateStatus();
 }
 
-$('cp-modal-close').onclick = cpModalClose;
-
-function xhr(url, onResult) {
+function xhr(url, cb) {
     var x = new XMLHttpRequest();
     x.open('GET', url, true);
-    x.send(null);
     x.onreadystatechange = function() {
-        if (x.readyState === 4) {
-            try {
-                var data = JSON.parse(x.responseText);
-                onResult(data);
-            } catch(e) {
-                onResult({ error: 'parse error' });
-            }
-        }
+        if (x.readyState === 4) try { cb(JSON.parse(x.responseText)); } catch(e) { cb({error:e.message}); }
     };
+    x.send(null);
 }
 
 function updateStatus() {
     xhr(BASE + '/status_api', function(d) {
-        try {
-            var stEl = $('cp-st-status');
-            var en = d.enabled;
-
-            if (en !== '1' && en !== '0') {
-                stEl.innerHTML = '<span class="cp-badge cp-badge-unknown">\u672a\u914d\u7f6e</span>';
-            } else if (en === '0') {
-                if (d.panel_running) {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-enabling">\u5df2\u505c\u6b62\uff08\u8fd0\u884c\u4e2d\uff09</span>';
-                } else {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-disabled">\u5df2\u7981\u7528</span>';
-                }
-            } else {
-                if (d.panel_running) {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-running">\u8fd0\u884c\u4e2d</span>';
-                } else {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-stopped">\u5df2\u505c\u6b62</span>';
-                }
-            }
-
-            $('cp-st-port').textContent = d.port || '-';
-            $('cp-st-pid').textContent = d.pid || '-';
-            $('cp-st-mem').textContent = (d.memory_kb > 0) ? (d.memory_kb / 1024).toFixed(1) + ' MB' : '-';
-            $('cp-st-uptime').textContent = d.uptime || '-';
-            $('cp-st-ver').textContent = d.panel_version || d.installed_version || '-';
-            $('cp-st-path').textContent = d.install_path || '-';
-            $('cp-st-disk').textContent = d.disk_free || '-';
-        } catch(e) {
-            $('cp-st-status').innerHTML = '<span class="cp-badge cp-badge-unknown">\u672a\u77e5</span>';
-        }
+        var st = $('cp-st-status');
+        if (d.enabled === '1' && d.panel_running) st.innerHTML = '<span class="cp-badge cp-badge-running">运行中</span>';
+        else if (d.enabled === '1') st.innerHTML = '<span class="cp-badge cp-badge-stopped">已停止</span>';
+        else if (d.enabled === '0') st.innerHTML = '<span class="cp-badge cp-badge-disabled">已禁用</span>';
+        else st.innerHTML = '<span class="cp-badge cp-badge-unknown">未知</span>';
+        $('cp-st-port').textContent = d.port || '-';
+        $('cp-st-pid').textContent = d.pid || '-';
+        $('cp-st-mem').textContent = d.memory_kb ? (d.memory_kb/1024).toFixed(1) + ' MB' : '-';
+        $('cp-st-uptime').textContent = d.uptime || '-';
+        $('cp-st-ver').textContent = d.panel_version || d.installed_version || '-';
+        $('cp-st-path').textContent = d.install_path || '-';
+        $('cp-st-disk').textContent = d.disk_free || '-';
     });
 }
 
 function doInstall() {
     var path = $('f-path').value.trim();
-    if (!path) { alert('\u8bf7\u8f93\u5165\u5b89\u88c5\u8def\u5f84'); return; }
-    var dangerous = ['/overlay','/rom','/proc','/sys','/dev','/run','/tmp','/var','/etc','/root','/home','/usr','/bin','/sbin','/lib','/','/opt'];
-    for (var i = 0; i < dangerous.length; i++) {
-        if (path === dangerous[i] || path.indexOf(dangerous[i] + '/') === 0) {
-            alert('\u8def\u5f84\u4e0d\u5408\u6cd5\uff1a' + path + '\n\u7cfb\u7edf\u8def\u5f84\u88ab\u7981\u7528\u3002\u8bf7\u4f7f\u7528\u5916\u7f6e\u5b58\u50a8\u6302\u8f7d\u70b9\u3002');
-            return;
-        }
+    if (!path) { alert('请输入安装路径'); return; }
+    if (path === '/' || path.indexOf('/overlay') === 0 || path.indexOf('/proc') === 0 || path.indexOf('/sys') === 0 || path.indexOf('/dev') === 0 || path.indexOf('/etc') === 0) {
+        alert('系统路径被禁止，请使用外置存储路径'); return;
     }
-
-    var m = $('cp-modal');
-    var mt = $('cp-modal-title');
-    var mc = $('cp-modal-log-content');
-    var ms = $('cp-modal-status');
-    var mo = $('cp-modal-okbtn');
-    mt.textContent = '\u6b63\u5728\u5b89\u88c5 ClawPanel...';
-    mc.innerHTML = '\u63d0\u4ea4\u5b89\u88c5\u4efb\u52a1...\n\n';
-    ms.textContent = '\u5b89\u88c5\u4e2d...';
-    ms.style.color = '#f0c674';
-    mo.style.display = 'none';
-    m.classList.add('show');
-
-    var ifrm = document.createElement('iframe');
-    ifrm.style.display = 'none';
-    ifrm.name = 'cp_setup_frame';
-    var frm = document.createElement('form');
-    frm.method = 'GET';
-    frm.action = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
-    frm.target = 'cp_setup_frame';
-    document.body.appendChild(ifrm);
-    document.body.appendChild(frm);
-    frm.submit();
-
-    modalPollTimer = setInterval(function() {
+    showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...<br><br><span style="color:#888">请在新打开的标签页查看安装进度。</span><br>主页面将在完成后自动刷新。</span>');
+    window.open(BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path), '_blank');
+    var poll = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
-            appendLog(d.log || '');
-
-            if (d.state === 'running') {
-                setModalStatus('\u5b89\u88c5\u4e2d...', '#f0c674');
-            } else if (d.state === 'success') {
-                clearInterval(modalPollTimer);
-                setModalStatus('\u5b89\u88c5\u5b8c\u6210\uff0c\u68c0\u6d4b\u7aef\u53e3...', '#4a90d9');
-                appendLog(d.log || '');
-                appendLog('\n--- \u7b49\u5f85 ClawPanel \u7aef\u53e3\u542f\u52a8\uff08\u6700\u591a90\u79d2\uff09... ---\n');
-
-                var waitTimer = setInterval(function() {
-                    xhr(BASE + '/wait_running', function(r) {
-                        if (r.state === 'running') {
-                            clearInterval(waitTimer);
-                            showModalSuccess('ClawPanel', (d.log || '') + '\n\n\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\n\n\u70b9\u51fb"\u5173\u95ed"\u8fd4\u56de\u72b6\u6001\u9762\u677f\u3002');
+            if (d.state === 'success') {
+                clearInterval(poll);
+                var p2 = setInterval(function() {
+                    xhr(BASE + '/status_api', function(s) {
+                        if (s.panel_running) {
+                            clearInterval(p2);
+                            showModal('安装成功！', '完成', 'ClawPanel 已安装并正在运行。<br>点击"关闭"返回状态面板。');
                         }
                     });
-                }, 2000);
-
-                setTimeout(function() {
-                    clearInterval(waitTimer);
-                    showModalSuccess('ClawPanel', (d.log || '') + '\n\n\u7aef\u53e3\u68c0\u6d4b\u8d85\u65f6\uff0c\u4f46\u5b89\u88c5\u5df2\u5b8c\u6210\u3002\u8bf7\u624b\u52a8\u5237\u65b0\u72b6\u6001\u3002');
-                }, 95000);
-
+                }, 3000);
+                setTimeout(function() { clearInterval(p2); showModal('安装完成', '请刷新', '安装已完成，请手动刷新查看状态。'); }, 60000);
             } else if (d.state === 'failed') {
-                clearInterval(modalPollTimer);
-                showModalError('\u5b89\u88c5\u5931\u8d25', (d.log || '') + '\n\u9000\u51fa\u7801\uff1a' + d.exit_code);
-            } else if (d.state === 'idle') {
-                clearInterval(modalPollTimer);
-                showModalError('\u5b89\u88c5', '\u5b89\u88c5\u65e5\u5fd7\u4e3a\u7a7a\u6216\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u8bd5\u3002');
+                clearInterval(poll);
+                showModal('安装失败', '错误', '退出码: ' + d.exit_code + '<br>' + (d.log || '').slice(-500));
             }
         });
-    }, 2500);
+    }, 3000);
 }
 
 function doSvc(action) {
-    var titles = {
-        restart: '\u91cd\u542f ClawPanel',
-        stop: '\u505c\u6b62 ClawPanel',
-        start: '\u542f\u52a8 ClawPanel'
-    };
-
-    if (action === 'stop') {
-        var m = $('cp-modal'); var mt = $('cp-modal-title'); var mc = $('cp-modal-log-content'); var ms = $('cp-modal-status'); var mo = $('cp-modal-okbtn');
-        mt.textContent = titles.stop; mc.innerHTML = '\u6b63\u5728\u505c\u6b62...\n\n'; ms.textContent = '\u505c\u6b62\u4e2d...'; ms.style.color = '#f0c674'; mo.style.display = 'none'; m.classList.add('show');
-        window.open(BASE + '/service_ctl?action=stop', '_blank');
-        var pollTimer = setInterval(function() {
-            xhr(BASE + '/wait_stopped', function(r) {
-                if (r.state === 'stopped') { clearInterval(pollTimer); mc.innerHTML = '\u7aef\u53e3\u5df2\u5173\u95ed\u3002\nClawPanel \u5df2\u505c\u6b62\u3002\n'; ms.textContent = '\u6210\u529f'; ms.style.color = '#1a7f37'; mo.style.display = 'inline-block'; }
-            });
-        }, 1000);
-        setTimeout(function() { clearInterval(pollTimer); mc.innerHTML += '\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\u3002\n'; mo.style.display = 'inline-block'; }, 35000);
-
-    } else if (action === 'start') {
-        var m = $('cp-modal'); var mt = $('cp-modal-title'); var mc = $('cp-modal-log-content'); var ms = $('cp-modal-status'); var mo = $('cp-modal-okbtn');
-        mt.textContent = titles.start; mc.innerHTML = '\u6b63\u5728\u542f\u52a8...\n\n'; ms.textContent = '\u542f\u52a8\u4e2d...'; ms.style.color = '#f0c674'; mo.style.display = 'none'; m.classList.add('show');
-        window.open(BASE + '/service_ctl?action=start', '_blank');
-        var pollTimer = setInterval(function() {
-            xhr(BASE + '/wait_running', function(r) {
-                if (r.state === 'running') { clearInterval(pollTimer); mc.innerHTML = '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\nClawPanel \u5df2\u542f\u52a8\u3002\n'; ms.textContent = '\u6210\u529f'; ms.style.color = '#1a7f37'; mo.style.display = 'inline-block'; }
-            });
-        }, 1000);
-        setTimeout(function() { clearInterval(pollTimer); mc.innerHTML += '\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\u3002\n'; mo.style.display = 'inline-block'; }, 35000);
-
-    } else if (action === 'restart') {
-        var m = $('cp-modal'); var mt = $('cp-modal-title'); var mc = $('cp-modal-log-content'); var ms = $('cp-modal-status'); var mo = $('cp-modal-okbtn');
-        mt.textContent = titles.restart; mc.innerHTML = '\u6b63\u5728\u91cd\u542f...\n\n'; ms.textContent = '\u91cd\u542f\u4e2d...'; ms.style.color = '#f0c674'; mo.style.display = 'none'; m.classList.add('show');
-        window.open(BASE + '/service_ctl?action=restart', '_blank');
-        var phase = 'stopping';
-        var pollTimer = setInterval(function() {
-            xhr(BASE + (phase === 'stopping' ? '/wait_stopped' : '/wait_running'), function(r) {
-                if (phase === 'stopping' && r.state === 'stopped') {
-                    phase = 'starting'; mc.innerHTML += '\u7aef\u53e3\u5df2\u5173\u95ed\uff0c\u7b49\u5f85\u91cd\u542f...\n'; ms.textContent = '\u7b49\u5f85\u91cd\u542f...'; ms.style.color = '#f0c674';
-                } else if (phase === 'starting' && r.state === 'running') {
-                    clearInterval(pollTimer); mc.innerHTML += '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\n\u91cd\u542f\u5b8c\u6210\u3002\n'; ms.textContent = '\u6210\u529f'; ms.style.color = '#1a7f37'; mo.style.display = 'inline-block';
-                }
-            });
-        }, 1500);
-        setTimeout(function() { clearInterval(pollTimer); mc.innerHTML += '\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\u3002\n'; mo.style.display = 'inline-block'; }, 60000);
-    }
-}
-
-function doUninstall() {
-    if (!confirm('\u786e\u8ba4\u5378\u8f7d ClawPanel\uff1f\n\u8fd9\u5c06\u505c\u6b62\u670d\u52a1\u5e76\u5220\u9664\u6240\u6709\u6587\u4ef6\u3002')) return;
-    var m = $('cp-modal');
-    var mt = $('cp-modal-title');
-    var mc = $('cp-modal-log-content');
-    var ms = $('cp-modal-status');
-    var mo = $('cp-modal-okbtn');
-    mt.textContent = '\u5378\u8f7d ClawPanel';
-    mc.innerHTML = '\u6b63\u5728\u5378\u8f7d...\n\n';
-    ms.textContent = '\u5378\u8f7d\u4e2d...';
-    ms.style.color = '#f0c674';
-    mo.style.display = 'none';
-    m.classList.add('show');
-    // Open API URL in new tab - it executes there, main page stays put
-    window.open(BASE + '/uninstall', '_blank');
-    // Poll status every 2s until service is fully removed (max 60s)
-    var pollCount = 0;
-    var pollTimer = setInterval(function() {
-        pollCount++;
-        xhr(BASE + '/status_api', function(d) {
-            if (!d.install_path || d.install_path === '' || pollCount > 30) {
-                clearInterval(pollTimer);
-                mc.innerHTML = '\u5378\u8f7d\u5b8c\u6210\uff01\n\u6240\u6709 ClawPanel \u6587\u4ef6\u5df2\u5220\u9664\u3002\n';
-                ms.textContent = '\u6210\u529f';
-                ms.style.color = '#1a7f37';
-                mo.style.display = 'inline-block';
+    var titles = { restart: '重启 ClawPanel', stop: '停止 ClawPanel', start: '启动 ClawPanel' };
+    var api = action === 'stop' ? '/wait_stopped' : '/wait_running';
+    showModal(titles[action], '执行中...', '正在执行...');
+    window.open(BASE + '/service_ctl?action=' + action, '_blank');
+    var poll = setInterval(function() {
+        xhr(BASE + api, function(d) {
+            var ok = (action === 'stop' && d.state === 'stopped') || (action !== 'stop' && d.state === 'running');
+            if (ok) {
+                clearInterval(poll);
+                showModal(action === 'stop' ? '已停止' : '已启动', '完成', action === 'stop' ? '服务已停止' : '服务已启动 (PID: ' + d.pid + ')');
             }
         });
     }, 2000);
+    setTimeout(function() { clearInterval(poll); showModal('命令已发送', '超时', '操作已发送，请刷新查看结果。'); }, 30000);
+}
+
+function doUninstall() {
+    if (!confirm('确认卸载 ClawPanel？\n这将停止服务并删除所有文件。')) return;
+    showModal('正在卸载', '执行中...', '正在卸载...');
+    window.open(BASE + '/uninstall', '_blank');
+    var poll = setInterval(function() {
+        xhr(BASE + '/status_api', function(d) {
+            if (!d.install_path || d.install_path === '') {
+                clearInterval(poll);
+                showModal('卸载完成', '成功', 'ClawPanel 已完全卸载。');
+            }
+        });
+    }, 3000);
+    setTimeout(function() { clearInterval(poll); showModal('卸载完成', '完成', '卸载操作已完成。'); }, 60000);
 }
 
 updateStatus();
 setInterval(updateStatus, 5000);
-//]]>
 </script>
-
 <%+footer%>
