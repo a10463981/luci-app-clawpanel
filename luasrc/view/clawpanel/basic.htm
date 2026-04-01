@@ -62,76 +62,80 @@ basic.htm — ClawPanel 基本设置页面
 <script>
 var BASE = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>';
 
-function svc(action, btn) {
+// 注意：iStoreOS LuCI 已废弃 new XHR()，改用 L.Request
+function svc(action) {
 	var el = document.getElementById('cp-result');
 	el.innerHTML = '<span style="color:#999">⏳ 正在执行...</span>';
-	var x = new XHR();
-	x.get(BASE + '/service_ctl?action=' + action, null, function(x) {
-		try {
-			var r = JSON.parse(x.responseText);
-			el.innerHTML = r.status == 'ok'
-				? '<span style="color:green">✅ ' + action + ' 已提交，页面将刷新...</span>'
-				: '<span style="color:red">❌ ' + (r.message || '失败') + '</span>';
-		} catch(e) {
-			el.innerHTML = '<span style="color:red">❌ 请求失败</span>';
+	L.Request.get('<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl?action=' + action, {
+		callback: function(x) {
+			try {
+				var r = JSON.parse(x.responseText);
+				el.innerHTML = r.status == 'ok'
+					? '<span style="color:green">✅ ' + action + ' 已提交，页面将刷新...</span>'
+					: '<span style="color:red">❌ ' + (r.message || '失败') + '</span>';
+			} catch(e) {
+				el.innerHTML = '<span style="color:red">❌ 请求失败</span>';
+			}
 		}
 	});
 	setTimeout(function() { location.reload(); }, 2500);
 }
 
-document.getElementById('btn-restart').onclick = function() { svc('restart', this); };
-document.getElementById('btn-stop').onclick = function() { svc('stop', this); };
-document.getElementById('btn-start').onclick = function() { svc('start', this); };
+document.getElementById('btn-restart').onclick = function() { svc('restart'); };
+document.getElementById('btn-stop').onclick = function() { svc('stop'); };
+document.getElementById('btn-start').onclick = function() { svc('start'); };
 
 document.getElementById('btn-check').onclick = function() {
 	var el = document.getElementById('cp-result');
 	el.innerHTML = '<span style="color:#999">⏳ 检测中...</span>';
-	var x = new XHR();
-	x.get(BASE + '/check_update', null, function(x) {
-		try {
-			var r = JSON.parse(x.responseText);
-			if (r.plugin_has_update) {
-				el.innerHTML = '<span style="color:#e36209">🔌 v' + r.plugin_current + ' → v' + r.plugin_latest + ' (有新版本)</span>';
-			} else if (r.plugin_current) {
-				el.innerHTML = '<span style="color:#1a7f37">✅ 已是最快版本: v' + r.plugin_current + '</span>';
-			} else {
-				el.innerHTML = '<span style="color:#888">无法获取版本</span>';
+	L.Request.get('<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/check_update', {
+		callback: function(x) {
+			try {
+				var r = JSON.parse(x.responseText);
+				if (r.plugin_has_update) {
+					el.innerHTML = '<span style="color:#e36209">🔌 v' + r.plugin_current + ' → v' + r.plugin_latest + ' (有新版本)</span>';
+				} else if (r.plugin_current) {
+					el.innerHTML = '<span style="color:#1a7f37">✅ 已是最快版本: v' + r.plugin_current + '</span>';
+				} else {
+					el.innerHTML = '<span style="color:#888">无法获取版本</span>';
+				}
+			} catch(e) {
+				el.innerHTML = '<span style="color:red">检测失败</span>';
 			}
-		} catch(e) {
-			el.innerHTML = '<span style="color:red">检测失败</span>';
 		}
 	});
 };
 
 (function() {
 	function load() {
-		var x = new XHR();
-		x.get(BASE + '/status_api', null, function(x) {
-			try {
-				var d = JSON.parse(x.responseText);
-				var st = document.getElementById('cp-st');
-				if (d.enabled !== '1') {
-					st.innerHTML = '<span class="cp-badge cp-badge-disabled">已禁用</span>';
-				} else if (d.panel_running) {
-					st.innerHTML = '<span class="cp-badge cp-badge-running">运行中</span>';
-				} else if (d.panel_starting) {
-					st.innerHTML = '<span class="cp-badge cp-badge-unknown">⏳ 启动中...</span>';
-				} else {
-					st.innerHTML = '<span class="cp-badge cp-badge-stopped">已停止</span>';
+		L.Request.get('<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/status_api', {
+			callback: function(x) {
+				try {
+					var d = JSON.parse(x.responseText);
+					var st = document.getElementById('cp-st');
+					if (d.enabled !== '1') {
+						st.innerHTML = '<span class="cp-badge cp-badge-disabled">已禁用</span>';
+					} else if (d.panel_running) {
+						st.innerHTML = '<span class="cp-badge cp-badge-running">运行中</span>';
+					} else if (d.panel_starting) {
+						st.innerHTML = '<span class="cp-badge cp-badge-unknown">⏳ 启动中...</span>';
+					} else {
+						st.innerHTML = '<span class="cp-badge cp-badge-stopped">已停止</span>';
+					}
+					document.getElementById('cp-sv').textContent = d.panel_running
+						? ('监听 :' + d.port)
+						: (d.panel_starting ? '初始化中...' : '未监听');
+					document.getElementById('cp-pid').textContent = d.pid || '-';
+					document.getElementById('cp-mem').textContent = d.memory_kb > 0
+						? (d.memory_kb / 1024).toFixed(1) + ' MB' : '-';
+					document.getElementById('cp-up').textContent = d.uptime || '-';
+					document.getElementById('cp-ver').textContent = d.panel_version || '未安装';
+					document.getElementById('cp-path').textContent = d.install_path || '-';
+					document.getElementById('cp-disk').textContent = d.disk_free
+						? (d.disk_free + ' 可用') : '-';
+				} catch(e) {
+					document.getElementById('cp-st').innerHTML = '<span class="cp-badge cp-badge-unknown">查询失败</span>';
 				}
-				document.getElementById('cp-sv').textContent = d.panel_running
-					? ('监听 :' + d.port)
-					: (d.panel_starting ? '初始化中...' : '未监听');
-				document.getElementById('cp-pid').textContent = d.pid || '-';
-				document.getElementById('cp-mem').textContent = d.memory_kb > 0
-					? (d.memory_kb / 1024).toFixed(1) + ' MB' : '-';
-				document.getElementById('cp-up').textContent = d.uptime || '-';
-				document.getElementById('cp-ver').textContent = d.panel_version || '未安装';
-				document.getElementById('cp-path').textContent = d.install_path || '-';
-				document.getElementById('cp-disk').textContent = d.disk_free
-					? (d.disk_free + ' 可用') : '-';
-			} catch(e) {
-				document.getElementById('cp-st').innerHTML = '<span class="cp-badge cp-badge-unknown">查询失败</span>';
 			}
 		});
 	}

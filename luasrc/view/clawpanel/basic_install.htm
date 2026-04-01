@@ -16,8 +16,6 @@ basic_install.htm — ClawPanel 安装页面
 .cp-btn-default{background:#6c757d;}
 .cp-btn:hover{opacity:0.85;}
 .cp-log{background:#1a1b26;color:#a9b1d6;padding:14px 16px;border-radius:6px;font-size:12px;line-height:1.6;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border:1px solid #2d333b;margin:0;}
-.cp-warn{color:#cf222e;font-size:12px;margin-top:6px;}
-.cp-info{color:#1a7f37;font-size:12px;margin-top:6px;}
 </style>
 
 <h2>📦 安装 ClawPanel</h2>
@@ -45,7 +43,7 @@ basic_install.htm — ClawPanel 安装页面
 <div id="cp-mount-list">
 <div style="color:#888;font-size:13px;">⏳ 正在检测外置存储...</div>
 </div>
-<div id="cp-path-warn" class="cp-warn" style="display:none;"></div>
+<div id="cp-path-warn" style="color:#cf222e;font-size:12px;margin-top:6px;display:none;"></div>
 </div>
 
 <div style="margin-bottom:20px;">
@@ -64,34 +62,34 @@ basic_install.htm — ClawPanel 安装页面
 var BASE = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>';
 var _selectedMount = '';
 
-// 加载挂载点
 function loadMounts() {
 	var el = document.getElementById('cp-mount-list');
-	var x = new XHR();
-	x.get(BASE + '/mounts', null, function(x) {
-		try {
-			var r = JSON.parse(x.responseText);
-			if (!r.mounts || r.mounts.length === 0) {
-				el.innerHTML = '<div style="color:#e36209;font-size:13px;">⚠️ 未检测到外置存储挂载点<br/><span style="color:#888;">请先在「系统 → 挂载点」中挂载 USB 硬盘或外部存储，再安装 ClawPanel。</span></div>';
-				return;
+	L.Request.get(BASE + '/mounts', {
+		callback: function(x) {
+			try {
+				var r = JSON.parse(x.responseText);
+				if (!r.mounts || r.mounts.length === 0) {
+					el.innerHTML = '<div style="color:#e36209;font-size:13px;">⚠️ 未检测到外置存储挂载点<br/><span style="color:#888;">请先在「系统 → 挂载点」中挂载 USB 硬盘或外部存储。</span></div>';
+					return;
+				}
+				var h = '';
+				r.mounts.forEach(function(m, i) {
+					var cls = i === 0 ? 'cp-mount-item selected' : 'cp-mount-item';
+					var chk = i === 0 ? 'checked' : '';
+					var rec = i === 0 ? ' <span style="background:#1a7f37;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">推荐</span>' : '';
+					var ac = m.avail_mb >= 500 ? '#1a7f37' : '#e36209';
+					h += '<div class="' + cls + '" onclick="cpSelectMount(\'' + m.mount + '\', this)">';
+					h += '<input type="radio" name="mnt" value="' + m.mount + '" ' + chk + ' style="margin-top:2px;">';
+					h += '<div>';
+					h += '<div class="cp-mount-name">' + m.mount + rec + '</div>';
+					h += '<div class="cp-mount-info">可用: <span style="color:' + ac + ';font-weight:600;">' + m.size + '</span> | 文件系统: ' + m.fs + '</div>';
+					h += '</div></div>';
+				});
+				el.innerHTML = h;
+				_selectedMount = r.mounts[0].mount;
+			} catch(e) {
+				el.innerHTML = '<div style="color:#cf222e;font-size:13px;">⚠️ 检测失败: ' + e.message + '</div>';
 			}
-			var h = '';
-			r.mounts.forEach(function(m, i) {
-				var cls = i === 0 ? 'cp-mount-item selected' : 'cp-mount-item';
-				var chk = i === 0 ? 'checked' : '';
-				var rec = i === 0 ? ' <span style="background:#1a7f37;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">推荐</span>' : '';
-				var ac = m.avail_mb >= 500 ? '#1a7f37' : '#e36209';
-				h += '<div class="' + cls + '" onclick="cpSelectMount(\'' + m.mount + '\', this)">';
-				h += '<input type="radio" name="mnt" value="' + m.mount + '" ' + chk + ' style="margin-top:2px;">';
-				h += '<div>';
-				h += '<div class="cp-mount-name">' + m.mount + rec + '</div>';
-				h += '<div class="cp-mount-info">可用: <span style="color:' + ac + ';font-weight:600;">' + m.size + '</span> | 文件系统: ' + m.fs + '</div>';
-				h += '</div></div>';
-			});
-			el.innerHTML = h;
-			_selectedMount = r.mounts[0].mount;
-		} catch(e) {
-			el.innerHTML = '<div style="color:#cf222e;font-size:13px;">⚠️ 检测失败: ' + e.message + '</div>';
 		}
 	});
 }
@@ -104,14 +102,12 @@ function cpSelectMount(m, el) {
 	if (el) el.classList.add('selected');
 }
 
-// 开始安装
 function cpDoInstall() {
 	var path = _selectedMount;
 	if (!path) {
 		alert('请先选择安装路径');
 		return;
 	}
-
 	var dangerous = ['/overlay','/rom','/boot','/proc','/sys','/dev','/opt','/tmp','/var','/etc','/root','/usr','/bin','/sbin','/lib','/'];
 	for (var i = 0; i < dangerous.length; i++) {
 		if (path === dangerous[i] || path.indexOf(dangerous[i] + '/') === 0) {
@@ -139,79 +135,87 @@ function cpDoInstall() {
 	resultEl.style.display = 'none';
 	logEl.textContent = '';
 	statusEl.textContent = '⏳ 正在连接...';
+	statusEl.style.color = '#999';
 	btn.disabled = true;
 
-	var vp = version ? '&version=' + encodeURIComponent(version) : '';
-	var url = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path) + vp;
-
 	// 先检查系统
-	var x1 = new XHR();
-	x1.get(BASE + '/check_system?install_path=' + encodeURIComponent(path), null, function(x1r) {
-		try {
-			var sys = JSON.parse(x1r.responseText);
-			var log = '════════════════════════════════\n';
-			log += '🔍 安装前检查\n';
-			log += '════════════════════════════════\n';
-			log += '安装路径: ' + path + '\n';
-			log += '内存: ' + sys.memory_mb + ' MB (需≥256MB) — ' + (sys.memory_ok ? '✅' : '❌') + '\n';
-			log += '磁盘: ' + sys.disk_mb + ' MB 可用 (需≥500MB) — ' + (sys.disk_ok ? '✅' : '❌') + '\n\n';
-			logEl.textContent = log;
-			if (!sys.pass) {
-				statusEl.textContent = '❌ 不满足安装条件';
+	L.Request.get(BASE + '/check_system?install_path=' + encodeURIComponent(path), {
+		callback: function(x) {
+			try {
+				var sys = JSON.parse(x.responseText);
+				var log = '════════════════════════════════\n';
+				log += '🔍 安装前检查\n';
+				log += '════════════════════════════════\n';
+				log += '安装路径: ' + path + '\n';
+				log += '内存: ' + sys.memory_mb + ' MB (需≥256MB) — ' + (sys.memory_ok ? '✅' : '❌') + '\n';
+				log += '磁盘: ' + sys.disk_mb + ' MB 可用 (需≥500MB) — ' + (sys.disk_ok ? '✅' : '❌') + '\n\n';
+				logEl.textContent = log;
+				if (!sys.pass) {
+					statusEl.textContent = '❌ 不满足安装条件';
+					statusEl.style.color = '#cf222e';
+					btn.disabled = false;
+					return;
+				}
+				statusEl.textContent = '⏳ 安装中，请稍候...';
+				statusEl.style.color = '#7aa2f7';
+				logEl.textContent += '✅ 检查通过，开始安装...\n\n';
+				cpStartInstall(path, version);
+			} catch(e) {
+				statusEl.textContent = '❌ 检查失败: ' + e.message;
 				statusEl.style.color = '#cf222e';
 				btn.disabled = false;
-				return;
 			}
-			statusEl.textContent = '⏳ 安装中，请稍候...';
-			statusEl.style.color = '#7aa2f7';
-			logEl.textContent += '✅ 检查通过，开始安装...\n\n';
+		}
+	});
+}
+
+function cpStartInstall(path, version) {
+	var vp = version ? '&version=' + encodeURIComponent(version) : '';
+	L.Request.get(BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path) + vp, {
+		callback: function(x) {
+			try { JSON.parse(x.responseText); } catch(e) {}
 			cpPollLog();
-		} catch(e) {
-			statusEl.textContent = '❌ 检查失败';
-			statusEl.style.color = '#cf222e';
-			btn.disabled = false;
 		}
 	});
 }
 
 var _pollTimer = null;
 function cpPollLog() {
-	var x = new XHR();
-	x.get(BASE + '/setup_log', null, function(xr) {
-		try {
-			var r = JSON.parse(xr.responseText);
-			var logEl = document.getElementById('cp-log-content');
-			var statusEl = document.getElementById('cp-log-status');
-			var resultEl = document.getElementById('cp-log-result');
-			if (r.log) {
-				logEl.textContent = r.log;
-				logEl.scrollTop = logEl.scrollHeight;
-			}
-			if (r.state === 'running') {
-				statusEl.textContent = '⏳ 安装进行中...';
-			} else if (r.state === 'success') {
-				clearInterval(_pollTimer);
-				_pollTimer = null;
-				statusEl.textContent = '✅ 安装完成！';
-				statusEl.style.color = '#1a7f37';
-				resultEl.style.display = 'block';
-				resultEl.innerHTML = '<div style="border:1px solid #c6e9c9;background:#e6f7e9;padding:12px 16px;border-radius:6px;"><strong style="color:#1a7f37">🎉 ClawPanel 安装成功！</strong><br/><span style="color:#555;font-size:13px;">请访问 <b>http://路由器IP:19527</b> 开始使用。</span><br/><a href="/cgi-bin/luci/admin/services/clawpanel"><button class="cp-btn cp-btn-primary" style="margin-top:8px;">🔄 返回管理页面</button></a></div>';
-			} else if (r.state === 'failed') {
-				clearInterval(_pollTimer);
-				_pollTimer = null;
-				statusEl.textContent = '❌ 安装失败';
-				statusEl.style.color = '#cf222e';
-			}
-		} catch(e) { }
+	L.Request.get(BASE + '/setup_log', {
+		callback: function(x) {
+			try {
+				var r = JSON.parse(x.responseText);
+				var logEl = document.getElementById('cp-log-content');
+				var statusEl = document.getElementById('cp-log-status');
+				var resultEl = document.getElementById('cp-log-result');
+				if (r.log) {
+					logEl.textContent = r.log;
+					logEl.scrollTop = logEl.scrollHeight;
+				}
+				if (r.state === 'running') {
+					statusEl.textContent = '⏳ 安装进行中...';
+					statusEl.style.color = '#7aa2f7';
+				} else if (r.state === 'success') {
+					clearInterval(_pollTimer);
+					_pollTimer = null;
+					statusEl.textContent = '✅ 安装完成！';
+					statusEl.style.color = '#1a7f37';
+					resultEl.style.display = 'block';
+					resultEl.innerHTML = '<div style="border:1px solid #c6e9c9;background:#e6f7e9;padding:12px 16px;border-radius:6px;"><strong style="color:#1a7f37">🎉 ClawPanel 安装成功！</strong><br/><span style="color:#555;font-size:13px;">请访问 <b>http://路由器IP:19527</b> 开始使用。</span><br/><a href="/cgi-bin/luci/admin/services/clawpanel"><button class="cp-btn cp-btn-primary" style="margin-top:8px;">🔄 返回管理页面</button></a></div>';
+				} else if (r.state === 'failed') {
+					clearInterval(_pollTimer);
+					_pollTimer = null;
+					statusEl.textContent = '❌ 安装失败';
+					statusEl.style.color = '#cf222e';
+				}
+			} catch(e) {}
+		}
 	});
-
 	if (!_pollTimer) {
 		_pollTimer = setInterval(cpPollLog, 3000);
 	}
 }
 
 // 页面加载时获取挂载点
-(function() {
-	loadMounts();
-})();
+loadMounts();
 </script>
