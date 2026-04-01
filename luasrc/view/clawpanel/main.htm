@@ -124,9 +124,14 @@ body{margin:0;padding:20px;font-family:inherit}
 </div>
 
 <script>
-// L.Request callback wrapper
+// AJAX helper - 用原生 window.XHR（iStoreOS LuCI 的 L.Request callback 签名不稳定）
 function rpc(url, cb) {
-    L.Request.get(url, {callback: function(x) { cb(x); }});
+    var x = new window.XHR();
+    x.open('GET', url, true);
+    x.onreadystatechange = function() {
+        if (x.readyState === 4) cb(x);
+    };
+    x.send();
 }
 
 function show(id) { document.getElementById(id).style.display = 'flex'; }
