@@ -14,14 +14,6 @@ CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-}"
 [ "$(id -u)" = "0" ] || { echo "Error: must run as root"; exit 1; }
 [ -n "$CP_BASE_PATH" ] || { echo "Error: CP_BASE_PATH not set"; exit 1; }
 
-# 閳光偓閳光偓 Timeout wrapper ( BusyBox-compatible ) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
-# Usage: timeout_wrapper <seconds> <command>...
-_timeout_cmd() {
-    local secs="$1"; shift
-    timeout -t "$secs" "$@" 2>/dev/null && return 0
-    return 1
-}
-
 get_arch() {
     case "$(uname -m)" in
         aarch64|arm64) echo "arm64" ;;
@@ -117,7 +109,7 @@ download_binary() {
 
     mv -f "$tmpfile" "$dest"
     chmod +x "$dest"
-    echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') 閳?$dest"
+    echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') -> $dest"
 }
 
 do_setup() {
@@ -125,7 +117,7 @@ do_setup() {
     local cp_data="${cp_install_path}/data"
     local cp_binary="${cp_install_path}/clawpanel"
     local cp_port="${CP_PORT:-19527}"
-    # OpenClaw 閻╊喖缍嶉敍姘洤閺嬫粎骞嗘晶鍐ㄥ綁闁插繑婀拋鍓х枂閿涘矁鍤滈崝銊﹀腹鐎甸棿璐?<install_path>/clawpanel/data
+    # OpenClaw 目录：如果环境变量未设置，自动推导为 <install_path>/.openclaw
     local openclaw_dir="${CP_OPENCLAW_DIR:-${CP_BASE_PATH}/.openclaw}"
     local openclaw_app="${CP_BASE_PATH}/clawpanel/app"
     local openclaw_work="${CP_BASE_PATH}/clawpanel/work"
@@ -151,35 +143,37 @@ do_setup() {
     url=$(get_download_url "$version" "$CP_ARCH")
     download_binary "$url" "$cp_binary" || exit 1
 
-    # 閻╁瓨甯存担璺ㄦ暏 GitHub API 閻楀牊婀伴崣鍑ょ礄娑撳秶鏁?binary --version閿涘矂浼╅崗宥堜粓缂冩垼绉撮弮璺哄幢娴ｅ骏绱?    local actual_ver="$version"
+    # 直接使用 GitHub API 版本号，不用 binary --version（后者会联网检测更新，可能卡住）
+    local actual_ver="$version"
     echo "$actual_ver" > "${cp_install_path}/.version"
     echo "Version: $actual_ver"
 
-    # 娣囨繂鐡ㄩ崚?UCI閿涘牅绶?init.d 閸氬海鐢婚崥顖氬З娴ｈ法鏁ら敍?    uci set clawpanel.main.enabled='1'
+    # 保存到 UCI（供 init.d 后续启动使用）
+    uci set clawpanel.main.enabled='1'
     uci set clawpanel.main.install_path="$CP_BASE_PATH"
     uci set clawpanel.main.openclaw_dir="$openclaw_dir"
     uci set clawpanel.main.port="$cp_port"
     uci set clawpanel.main.version="$actual_ver"
     uci commit clawpanel
 
-    # 閸愭瑥鍙?clawpanel.json閿涘牏鏁?init 閼存碍婀?start_service 閸愬秵顐肩憰鍡欐磰閿涘矁绻栭柌灞藉帥閸愭瑤绔村▎鈥茬箽閹躲倧绱?    cat > "${cp_data}/clawpanel.json" <<EOF
-{
-  "port": ${cp_port},
-  "dataDir": "${cp_data}",
-  "openClawDir": "${openclaw_dir}",
-  "openClawApp": "${openclaw_app}",
-  "openClawWork": "${openclaw_work}",
-  "edition": "pro",
-  "jwtSecret": "clawpanel-secret-change-me",
-  "adminToken": "clawpanel",
-  "debug": false
-}
-EOF
+    # 用 printf 写 clawpanel.json（避免 heredoc 的变量展开问题）
+    printf '{\n' > "${cp_data}/clawpanel.json"
+    printf '  "port": %s,\n' "$cp_port" >> "${cp_data}/clawpanel.json"
+    printf '  "dataDir": "%s",\n' "$cp_data" >> "${cp_data}/clawpanel.json"
+    printf '  "openClawDir": "%s",\n' "$openclaw_dir" >> "${cp_data}/clawpanel.json"
+    printf '  "openClawApp": "%s",\n' "$openclaw_app" >> "${cp_data}/clawpanel.json"
+    printf '  "openClawWork": "%s",\n' "$openclaw_work" >> "${cp_data}/clawpanel.json"
+    printf '  "edition": "pro",\n' >> "${cp_data}/clawpanel.json"
+    printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "${cp_data}/clawpanel.json"
+    printf '  "adminToken": "clawpanel",\n' >> "${cp_data}/clawpanel.json"
+    printf '  "debug": false\n' >> "${cp_data}/clawpanel.json"
+    printf '}\n' >> "${cp_data}/clawpanel.json"
     echo "Config written: ${cp_data}/clawpanel.json"
 
-    # 閸氼垰濮?ClawPanel閿涘潟nit 閼存碍婀版导姘冲殰閸斻劌鍟€濞嗏€冲晸閸忋儲顒滅涵顔炬畱 clawpanel.json閿?    echo "Starting ClawPanel..."
+    # 启动 ClawPanel（init 脚本会在启动前再次写入正确的 clawpanel.json）
+    echo "Starting ClawPanel..."
     /etc/init.d/clawpanel enable 2>/dev/null || true
-    _timeout_cmd 10 /etc/init.d/clawpanel start || true
+    /etc/init.d/clawpanel start >/dev/null 2>&1 || true
 
     echo ""
     echo "=== Installation Complete ==="
