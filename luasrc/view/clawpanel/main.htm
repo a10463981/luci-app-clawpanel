@@ -47,6 +47,8 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 #cp-modal .modal-error{color:#cf222e}
 </style>
 
+<iframe name="cp_frame" style="display:none"></iframe>
+
 <div id="cp-modal">
 <div class="modal-box">
 <div class="modal-hdr"><span class="mh-title" id="cp-modal-title">ClawPanel</span></div>
@@ -141,8 +143,15 @@ function doInstall() {
     if (path === '/' || path.indexOf('/overlay') === 0 || path.indexOf('/proc') === 0 || path.indexOf('/sys') === 0 || path.indexOf('/dev') === 0 || path.indexOf('/etc') === 0) {
         alert('系统路径被禁止，请使用外置存储路径'); return;
     }
-    showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...<br><br><span style="color:#888">请在新打开的标签页查看安装进度。</span><br>主页面将在完成后自动刷新。</span>');
-    window.open(BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path), '_blank');
+    showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...<br><br><span style="color:#888">安装将在后台进行。</span><br>主页面轮询等待完成。');
+    // Submit to hidden iframe
+    var f = document.createElement('form');
+    f.method = 'GET';
+    f.action = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
+    f.target = 'cp_frame';
+    document.body.appendChild(f);
+    f.submit();
+    document.body.removeChild(f);
     var poll = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
             if (d.state === 'success') {
@@ -168,7 +177,14 @@ function doSvc(action) {
     var titles = { restart: '重启 ClawPanel', stop: '停止 ClawPanel', start: '启动 ClawPanel' };
     var api = action === 'stop' ? '/wait_stopped' : '/wait_running';
     showModal(titles[action], '执行中...', '正在执行...');
-    window.open(BASE + '/service_ctl?action=' + action, '_blank');
+    // Submit to hidden iframe
+    var f = document.createElement('form');
+    f.method = 'GET';
+    f.action = BASE + '/service_ctl?action=' + action;
+    f.target = 'cp_frame';
+    document.body.appendChild(f);
+    f.submit();
+    document.body.removeChild(f);
     var poll = setInterval(function() {
         xhr(BASE + api, function(d) {
             var ok = (action === 'stop' && d.state === 'stopped') || (action !== 'stop' && d.state === 'running');
@@ -184,7 +200,14 @@ function doSvc(action) {
 function doUninstall() {
     if (!confirm('确认卸载 ClawPanel？\n这将停止服务并删除所有文件。')) return;
     showModal('正在卸载', '执行中...', '正在卸载...');
-    window.open(BASE + '/uninstall', '_blank');
+    // Submit to hidden iframe instead of window.open
+    var f = document.createElement('form');
+    f.method = 'GET';
+    f.action = BASE + '/uninstall';
+    f.target = 'cp_frame';
+    document.body.appendChild(f);
+    f.submit();
+    document.body.removeChild(f);
     var poll = setInterval(function() {
         xhr(BASE + '/status_api', function(d) {
             if (!d.install_path || d.install_path === '') {
