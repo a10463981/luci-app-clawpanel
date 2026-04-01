@@ -232,14 +232,10 @@ function doInstall() {
 
     showModal('\u6b63\u5728\u5b89\u88c5 ClawPanel...', '\u63d0\u4ea4\u5b89\u88c5\u4efb\u52a1...\n', '\u5b89\u88c5\u4e2d...');
 
-    // Submit to hidden iframe (no page navigation, no XHR)
-    var form = document.createElement('form');
-    form.method = 'GET';
-    form.action = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
-    form.target = 'cp_hidden_frame';
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
+    // Fire-and-forget via fetch (no page navigation)
+    fetch(BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path), { method: 'GET', cache: 'no-store' })
+        .then(function() { /* ignore */ })
+        .catch(function() { /* ignore */ });
 
     modalPollTimer = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
@@ -287,14 +283,8 @@ function doSvc(action) {
 
     if (action === 'stop') {
         showModal(titles.stop, '\u6b63\u5728\u505c\u6b62...\n', '\u505c\u6b62\u4e2d...');
-        // Fire action via hidden iframe
-        var form = document.createElement('form');
-        form.method = 'GET';
-        form.action = BASE + '/service_ctl?action=stop';
-        form.target = 'cp_hidden_frame';
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+        fetch(BASE + '/service_ctl?action=stop', { method: 'GET', cache: 'no-store' })
+            .then(function(){}).catch(function(){});
         var waitTimer = setInterval(function() {
             xhr(BASE + '/wait_stopped', function(r) {
                 if (r.state === 'stopped') {
@@ -307,13 +297,8 @@ function doSvc(action) {
 
     } else if (action === 'start') {
         showModal(titles.start, '\u6b63\u5728\u542f\u52a8...\n', '\u542f\u52a8\u4e2d...');
-        var form = document.createElement('form');
-        form.method = 'GET';
-        form.action = BASE + '/service_ctl?action=start';
-        form.target = 'cp_hidden_frame';
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+        fetch(BASE + '/service_ctl?action=start', { method: 'GET', cache: 'no-store' })
+            .then(function(){}).catch(function(){});
         var waitTimer = setInterval(function() {
             xhr(BASE + '/wait_running', function(r) {
                 if (r.state === 'running') {
@@ -326,13 +311,8 @@ function doSvc(action) {
 
     } else if (action === 'restart') {
         showModal(titles.restart, '\u6b63\u5728\u91cd\u542f...\n', '\u91cd\u542f\u4e2d...');
-        var form = document.createElement('form');
-        form.method = 'GET';
-        form.action = BASE + '/service_ctl?action=restart';
-        form.target = 'cp_hidden_frame';
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+        fetch(BASE + '/service_ctl?action=restart', { method: 'GET', cache: 'no-store' })
+            .then(function(){}).catch(function(){});
         var phase = 'stopping';
         var waitTimer = setInterval(function() {
             xhr(BASE + (phase === 'stopping' ? '/wait_stopped' : '/wait_running'), function(r) {
@@ -354,16 +334,12 @@ function doUninstall() {
     if (!confirm('\u786e\u8ba4\u5378\u8f7d ClawPanel\uff1f\n\u8fd9\u5c06\u505c\u6b62\u670d\u52a1\u5e76\u5220\u9664\u6240\u6709\u6587\u4ef6\u3002')) return;
     showModal('\u5378\u8f7d ClawPanel', '\u6b63\u5728\u5378\u8f7d...\n', '\u5378\u8f7d\u4e2d...');
 
-    // Submit to hidden iframe: page won't navigate away
-    var form = document.createElement('form');
-    form.method = 'GET';
-    form.action = BASE + '/uninstall';
-    form.target = 'cp_hidden_frame';
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
+    // Fire-and-forget with fetch (no page navigation)
+    fetch(BASE + '/uninstall', { method: 'GET', cache: 'no-store' })
+        .then(function() { /* ignore response */ })
+        .catch(function() { /* ignore errors */ });
 
-    // Close modal and refresh status after 5 seconds (let uninstall run in background)
+    // Keep modal visible for 5 seconds then close
     setTimeout(function() {
         cpModalClose();
     }, 5000);
