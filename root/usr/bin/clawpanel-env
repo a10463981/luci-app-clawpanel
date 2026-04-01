@@ -61,13 +61,22 @@ is_elf() {
     [ "$first4" = "7f454c46" ]
 }
 
-# Find any ELF binary in install dir (for manual upload detection)
+# Find any ELF binary in install dir or /tmp (for manual upload detection)
 find_elf_binary() {
     local dir="$1"
-    for f in "$dir"/clawpanel* "$dir"/clawpanel; do
-        [ -f "$f" ] || continue
-        is_elf "$f" && echo "$f" && return 0
+    # Scan: final destination, install dir, and /tmp
+    local search_paths="$dir/clawpanel $dir /tmp /tmp/clawpanel_bin_$$"
+    for d in $dir /tmp; do
+        for f in "$d"/clawpanel* "$d"/clawpanel; do
+            [ -f "$f" ] || continue
+            is_elf "$f" && echo "$f" && return 0
+        done
     done
+    # Also check the temp download file from curl
+    if [ -f "/tmp/clawpanel_bin_$$" ] && is_elf "/tmp/clawpanel_bin_$$"; then
+        echo "/tmp/clawpanel_bin_$$"
+        return 0
+    fi
     return 1
 }
 
@@ -99,30 +108,34 @@ get_version() {
     fi
 }
 
-# Download binary
+# Download binary to temp location first, then move to final
 download_binary() {
     local url="$1"
     local dest="$2"
+    local tmpfile="/tmp/clawpanel_bin_$$"
+
     echo "Downloading: $url"
     local http_code
-    http_code=$(curl -sL -o "$dest" -w "%{http_code}" --fail --location-timeout 120 "$url" 2>/dev/null)
+    http_code=$(curl -sL -o "$tmpfile" -w "%{http_code}" --fail --location-timeout 120 "$url" 2>/dev/null)
     if [ "$http_code" != "200" ]; then
-        rm -f "$dest"
+        rm -f "$tmpfile"
         echo "Error: Download failed (HTTP $http_code)"
         return 1
     fi
-    local fsize=$(wc -c < "$dest" 2>/dev/null || echo "0")
+    local fsize=$(wc -c < "$tmpfile" 2>/dev/null || echo "0")
     if [ -z "$fsize" ] || [ "$fsize" -lt 5000000 ]; then
-        rm -f "$dest"
+        rm -f "$tmpfile"
         echo "Error: Downloaded file too small (${fsize} bytes)"
         return 1
     fi
-    if ! is_elf "$dest"; then
-        rm -f "$dest"
+    if ! is_elf "$tmpfile"; then
+        rm -f "$tmpfile"
         echo "Error: Downloaded file is not a valid ELF binary"
         return 1
     fi
-    chmod +x "$dest"
+    chmod +x "$tmpfile"
+    # Move from /tmp to final destination
+    mv -f "$tmpfile" "$dest"
     echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') → $dest"
 }
 
