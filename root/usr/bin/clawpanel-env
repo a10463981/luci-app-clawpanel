@@ -92,36 +92,46 @@ create_dirs() {
 download_binary() {
     local url="$1"
     local dest="$2"
-    local filename=$(basename "$url")
 
     echo "Downloading from: $url"
 
     local tmpfile="/tmp/clawpanel_bin_$$"
-    if curl -L -o "$tmpfile" "$url" 2>&1; then
-        # Check if download is valid - verify it's an ELF binary by checking header
-        if [ -s "$tmpfile" ]; then
-            # Check for ELF magic bytes (7f 45 4c 46)
-            local magic=$(hexdump -C "$tmpfile" 2>/dev/null | head -1 | grep -o '7f 45 4c 46')
-            if [ -n "$magic" ]; then
-                mv -f "$tmpfile" "$dest"
-                chmod +x "$dest"
-                echo "Binary downloaded and installed: $dest"
-                return 0
-            else
-                rm -f "$tmpfile"
-                echo "Error: Downloaded file is not a valid ELF binary (URL may be incorrect)"
-                return 1
-            fi
-        else
-            rm -f "$tmpfile"
-            echo "Error: Downloaded file is empty"
-            return 1
-        fi
-    else
+    # Use -s to suppress curl progress bar, show our own progress
+    local curl_out
+    curl_out=$(curl -sL -o "$tmpfile" -w "%{http_code}|%{size_download}" "$url") || {
         rm -f "$tmpfile"
         echo "Error: Download failed"
         return 1
+    }
+
+    local http_code="${curl_out%|*}"
+    local size_download="${curl_out#*|}"
+
+    if [ "$http_code" != "200" ] && [ "$http_code" != "302" ] && [ "$http_code" != "301" ]; then
+        rm -f "$tmpfile"
+        echo "Error: Download failed (HTTP $http_code)"
+        return 1
     fi
+
+    if [ ! -s "$tmpfile" ]; then
+        rm -f "$tmpfile"
+        echo "Error: Downloaded file is empty"
+        return 1
+    fi
+
+    # Check ELF magic bytes: 7f 45 4c 46 (using od, more portable than hexdump on OpenWrt)
+    local magic
+    magic=$(od -A n -t x1 -N 4 "$tmpfile" 2>/dev/null | tr -d ' ' | head -c 8)
+    if [ "$magic" != "7f454c46" ]; then
+        rm -f "$tmpfile"
+        echo "Error: Downloaded file is not a valid ELF binary (URL may be incorrect)"
+        return 1
+    fi
+
+    mv -f "$tmpfile" "$dest"
+    chmod +x "$dest"
+    echo "Binary downloaded: $(du -h "$dest" | cut -f1) → $dest"
+    return 0
 }
 
 # Setup uci config
