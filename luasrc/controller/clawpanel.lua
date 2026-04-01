@@ -17,12 +17,6 @@ function index()
 	entry({"admin", "services", "clawpanel"},
 		template("clawpanel/main"), _("ClawPanel"), 85).dependent = false
 
-	entry({"admin", "services", "clawpanel", "basic"},
-		cbi("clawpanel/basic"), _("状态与设置"), 10).leaf = true
-
-	entry({"admin", "services", "clawpanel", "install"},
-		template("clawpanel/basic_install"), _("安装"), 20).leaf = true
-
 	entry({"admin", "services", "clawpanel", "status_api"},
 		call("action_status"), nil).leaf = true
 
