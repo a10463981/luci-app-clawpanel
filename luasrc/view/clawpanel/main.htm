@@ -18,7 +18,7 @@ local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
 local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
 
 -- 简化端口检测：直接用 pgrep
-local panel_running = (tonumber(trim(sh("pgrep -f 'clawpanel' 2>/dev/null | wc -l")) or 0) > 0
+local panel_running = (tonumber(trim(sh("pgrep -f 'clawpanel' 2>/dev/null | wc -l"))) or 0) > 0
 
 local pid = ""
 if panel_running then
