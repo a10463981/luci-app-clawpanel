@@ -313,6 +313,9 @@ function action_uninstall()
 
 	log("Stopping ClawPanel service...")
 	sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
+	sh("sleep 2")
+	log("Killing all clawpanel processes...")
+	sh("killall -9 clawpanel 2>/dev/null; sleep 1")
 	log("Service stopped")
 
 	log("Disabling auto-start...")
