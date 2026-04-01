@@ -155,7 +155,7 @@ do_setup() {
     uci set clawpanel.main.version="$actual_ver"
     uci commit clawpanel
 
-    # 写入 clawpanel.json，避免程序生成时默认路径错误
+    # 写入 clawpanel.json（ClawPanel 启动后会覆盖， 所以等它生成后再强制修复）
     cat > "${cp_data}/clawpanel.json" <<EOF
 {
   "port": ${cp_port},
@@ -171,8 +171,35 @@ do_setup() {
 EOF
     echo "Config written: ${cp_data}/clawpanel.json"
 
-    echo "Starting ClawPanel..."
+    echo "Starting ClawPanel (first run, will generate its internal config)..."
     /etc/init.d/clawpanel enable 2>/dev/null || true
+    /etc/init.d/clawpanel start >/dev/null 2>&1 || true
+
+    # ClawPanel 启动后会把自己的路径写进 clawpanel.json（用默认 /root/...）。
+    # 所以等它完成首次生成后，强制修正配置，然后重启一次。
+    echo "Waiting for ClawPanel to initialize (5s)..."
+    sleep 5
+
+    # 再次强制写入正确的配置（覆盖 ClawPanel 生成的错误路径）
+    cat > "${cp_data}/clawpanel.json" <<EOF
+{
+  "port": ${cp_port},
+  "dataDir": "${cp_data}",
+  "openClawDir": "${openclaw_dir}",
+  "openClawApp": "${openclaw_app}",
+  "openClawWork": "${openclaw_work}",
+  "edition": "pro",
+  "jwtSecret": "clawpanel-secret-change-me",
+  "adminToken": "clawpanel",
+  "debug": false
+}
+EOF
+    echo "Config patched: ${cp_data}/clawpanel.json"
+
+    # 重启 ClawPanel 使修正后的配置生效
+    echo "Restarting ClawPanel with corrected config..."
+    /etc/init.d/clawpanel stop >/dev/null 2>&1 || true
+    sleep 2
     /etc/init.d/clawpanel start >/dev/null 2>&1 || true
 
     echo ""
