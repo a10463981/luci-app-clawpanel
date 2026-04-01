@@ -128,20 +128,45 @@ end
 
 function action_service_ctl()
 	local http = require "luci.http"
+	local dispatcher = require "luci.dispatcher"
+
+	-- 返回一个自动跳转回主页的最小 HTML 页面
+	-- 这是 LuCI ucode bridge 上最可靠的 API 响应方式
+	local function redirect_to_main(msg)
+		http.prepare_content("text/html; charset=utf-8")
+		http.write(string.format([[
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="1;url=%s">
+<style>body{font-family:Arial,sans-serif;text-align:center;padding:60px;background:#f5f5f5}
+p{font-size:18px;color:#333;margin-top:20px}.ok{color:#1a7f37}.err{color:#cf222e}</style>
+</head><body>
+<p>%s</p>
+<p style="font-size:13px;color:#888">页面将自动返回...</p>
+<script>setTimeout(function(){location.href='%s'},1500);</script>
+</body></html>
+		]], dispatcher.build_url("admin", "services", "clawpanel"), msg, dispatcher.build_url("admin", "services", "clawpanel")))
+	end
+
 	local action = http.formvalue("action") or ""
 
 	if action == "start" then
 		sh("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
+		redirect_to_main("⏳ 启动中...")
 	elseif action == "stop" then
 		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
+		redirect_to_main("⏳ 停止中...")
 	elseif action == "restart" then
 		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
 		sh("sleep 2")
 		sh("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
+		redirect_to_main("⏳ 重启中...")
 	elseif action == "enable" then
 		sh("/etc/init.d/clawpanel enable 2>/dev/null")
+		redirect_to_main("✅ 已启用开机启动")
 	elseif action == "disable" then
 		sh("/etc/init.d/clawpanel disable 2>/dev/null")
+		redirect_to_main("✅ 已禁用开机启动")
 	elseif action == "setup" then
 		sh("rm -f /tmp/clawpanel-setup.log /tmp/clawpanel-setup.pid /tmp/clawpanel-setup.exit")
 		local version = http.formvalue("version") or ""
@@ -157,18 +182,10 @@ function action_service_ctl()
 		end
 
 		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' /usr/bin/clawpanel-env setup > /tmp/clawpanel-setup.log 2>&1; RC=$?; echo $RC > /tmp/clawpanel-setup.exit; if [ $RC -eq 0 ]; then uci set clawpanel.main.enabled=1; uci commit clawpanel; /etc/init.d/clawpanel enable 2>/dev/null; fi ) & echo $! > /tmp/clawpanel-setup.pid")
-
-		http.prepare_content("application/json")
-		http.write_json({ status = "ok", message = "安装已启动" })
-		return
+		redirect_to_main("⏳ 安装已启动，正在下载 ClawPanel，请稍候（10-30秒）...")
 	else
-		http.prepare_content("application/json")
-		http.write_json({ status = "error", message = "未知操作" })
-		return
+		redirect_to_main("❌ 未知操作: " .. action)
 	end
-
-	http.prepare_content("application/json")
-	http.write_json({ status = "ok", action = action })
 end
 
 function action_setup_log()
@@ -248,6 +265,7 @@ end
 function action_uninstall()
 	local http = require "luci.http"
 	local uci = require "luci.model.uci".cursor()
+	local dispatcher = require "luci.dispatcher"
 
 	local install_path = uci:get("clawpanel", "main", "install_path") or ""
 	local cp_path = install_path ~= "" and (install_path .. "/clawpanel") or ""
@@ -261,11 +279,20 @@ function action_uninstall()
 	end
 	sh("rm -f /tmp/clawpanel-setup.* /var/run/clawpanel.pid")
 
-	http.prepare_content("application/json")
-	http.write_json({
-		status = "ok",
-		message = "ClawPanel 已完全卸载"
-	})
+	local main_url = dispatcher.build_url("admin", "services", "clawpanel")
+	http.prepare_content("text/html; charset=utf-8")
+	http.write(string.format([[
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="2;url=%s">
+<style>body{font-family:Arial,sans-serif;text-align:center;padding:60px;background:#f5f5f5}
+p{font-size:18px;color:#cf222e;margin-top:20px}.sub{font-size:13px;color:#888;margin-top:12px}</style>
+</head><body>
+<p>🗑️ 正在卸载 ClawPanel...</p>
+<p class="sub">所有数据将被删除</p>
+<script>setTimeout(function(){location.href='%s'},2500);</script>
+</body></html>
+	]], main_url, main_url))
 end
 
 function action_check_system()
