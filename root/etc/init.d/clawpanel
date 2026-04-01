@@ -1,192 +1,146 @@
 #!/bin/sh /etc/rc.common
-# luci-app-clawpanel — procd init 脚本
-# ClawPanel 管理面板自启动管理
+# luci-app-clawpanel - procd init script for ClawPanel
 
 USE_PROCD=1
 START=99
 STOP=10
 
-EXTRA_COMMANDS="setup status_service check_update do_update"
-EXTRA_HELP="    setup            下载并安装 ClawPanel
-    status_service   显示服务状态"
+EXTRA_COMMANDS="setup status_service"
+EXTRA_HELP="    setup            install ClawPanel\n    status_service   show service status"
 
-# ── 安装路径（必须由 UCI 配置指定，不允许硬编码默认）──
-CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '')"
-CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
-CP_DATA="${CP_INSTALL_PATH}/data"
-CP_BIN="${CP_INSTALL_PATH}/clawpanel"
-
-# ── OpenClaw 数据目录（优先从 UCI 读取，否则使用统一默认）──
-# 统一默认到安装目录下，禁止回落到 /root/.openclaw
-CP_OPENCLAW_DIR="$(uci -q get clawpanel.main.openclaw_dir || echo '')"
-if [ -z "$CP_OPENCLAW_DIR" ]; then
-	CP_OPENCLAW_DIR="${CP_DATA}"
-fi
-
-# ── OverlayFS 兼容性修复 ──
-_cp_fix_opt() {
-	[ "$CP_BASE_PATH" != "/opt" ] && return 0
-	mkdir -p /opt/clawpanel/.probe 2>/dev/null && { rmdir /opt/clawpanel/.probe 2>/dev/null; return 0; }
-	if [ -d /overlay/upper/opt ]; then
-		mkdir -p /overlay/upper/opt/clawpanel 2>/dev/null
-		mount --bind /overlay/upper/opt /opt 2>/dev/null && return 0
-	fi
-	return 1
-}
-_cp_fix_opt
-
-get_cp_version() {
-	if [ -x "$CP_BIN" ]; then
-		"$CP_BIN" --version 2>/dev/null | tr -d '[:space:]' || echo "unknown"
-	else
-		echo "not_installed"
-	fi
+# ── read UCI config (called each time start_service runs) ──────────────────────
+_load_uci() {
+    CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '')"
+    if [ -z "$CP_BASE_PATH" ] || [ "${CP_BASE_PATH#/}" = "$CP_BASE_PATH" ]; then
+        echo "ClawPanel: install_path not set, run clawpanel-env setup first"
+        return 1
+    fi
+    CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
+    CP_DATA="${CP_INSTALL_PATH}/data"
+    CP_BIN="${CP_INSTALL_PATH}/clawpanel"
+    CP_OPENCLAW_DIR="$(uci -q get clawpanel.main.openclaw_dir || echo '')"
+    if [ -z "$CP_OPENCLAW_DIR" ] || [ "${CP_OPENCLAW_DIR#/}" = "$CP_OPENCLAW_DIR" ]; then
+        CP_OPENCLAW_DIR="${CP_DATA}"
+    fi
+    return 0
 }
 
 start_service() {
-	local enabled port edition
-	config_load clawpanel
-	config_get enabled main enabled "0"
-	config_get port main port "19527"
-	config_get edition main edition "pro"
+    _load_uci || return 1
 
-	[ "$enabled" = "1" ] || {
-		echo "ClawPanel 已禁用。请在 /etc/config/clawpanel 中设置 enabled 为 1"
-		return 0
-	}
+    local enabled port edition
+    config_load clawpanel
+    config_get enabled main enabled "0"
+    config_get port main port "19527"
+    config_get edition main edition "pro"
 
-	# 必须有安装路径，否则拒绝启动
-	if [ -z "$CP_BASE_PATH" ]; then
-		echo "ClawPanel 未指定安装路径，请在 LuCI → 服务 → ClawPanel 中选择安装位置"
-		return 1
-	fi
+    [ "$enabled" = "1" ] || {
+        echo "ClawPanel: disabled in UCI (enabled=0)"
+        return 0
+    }
 
-	# 检查二进制是否存在
-	if [ ! -x "$CP_BIN" ]; then
-		echo "ClawPanel 未安装: $CP_BIN"
-		echo "请运行: clawpanel-env setup（需先在 LuCI 中选择安装路径）"
-		return 1
-	fi
+    [ -x "$CP_BIN" ] || {
+        echo "ClawPanel: binary not found at $CP_BIN, run clawpanel-env setup"
+        return 1
+    }
 
-	# 确保数据目录存在
-	mkdir -p "$CP_DATA" 2>/dev/null
+    mkdir -p "$CP_DATA" "$CP_OPENCLAW_DIR" 2>/dev/null
 
-	# 确保 OpenClaw 目录存在
-	mkdir -p "$CP_OPENCLAW_DIR" 2>/dev/null
+    port=$(echo "$port" | tr -cd '0-9')
+    [ -z "$port" ] && port=19527
 
-	# 确保端口为纯数字
-	port=$(echo "$port" | tr -cd '0-9')
-	[ -z "$port" ] && port=19527
+    # Kill old instances
+    for pid in $(pgrep -f "clawpanel" 2>/dev/null); do
+        kill "$pid" 2>/dev/null
+    done
 
-	# 确保端口未被占用
-	_ensure_port_free() {
-		local p="$1"
-		local i=0
-		if command -v ss >/dev/null 2>&1; then
-			ss -tulnp 2>/dev/null | grep -q ":${p} " || return 0
-		else
-			netstat -tulnp 2>/dev/null | grep -q ":${p} " || return 0
-		fi
-		for occ_pid in $(pgrep -f "clawpanel" 2>/dev/null); do
-			kill "$occ_pid" 2>/dev/null
-		done
-		while [ $i -lt 20 ]; do
-			if command -v ss >/dev/null 2>&1; then
-				ss -tulnp 2>/dev/null | grep -q ":${p} " || return 0
-			else
-				netstat -tulnp 2>/dev/null | grep -q ":${p} " || return 0
-			fi
-			usleep 200000 2>/dev/null || sleep 0.2
-			i=$((i + 1))
-		done
-	}
-	_ensure_port_free "$port"
+    # Wait for port to free
+    local i=0
+    while [ $i -lt 15 ]; do
+        if ! netstat -tulnp 2>/dev/null | grep -q ":${port} "; then
+            break
+        fi
+        usleep 200000 2>/dev/null || sleep 0.2
+        i=$((i + 1))
+    done
 
-	# 从 .version 文件读取 ClawPanel 程序版本号
-	local cp_ver
-	if [ -f "${CP_INSTALL_PATH}/.version" ]; then
-		cp_ver=$(cat "${CP_INSTALL_PATH}/.version" 2>/dev/null | tr -d '[:space:]')
-	fi
-	[ -z "$cp_ver" ] && cp_ver="5.3.3"
+    # Read version from .version file
+    local cp_ver
+    if [ -f "${CP_INSTALL_PATH}/.version" ]; then
+        cp_ver=$(cat "${CP_INSTALL_PATH}/.version" 2>/dev/null | tr -d '[:space:]')
+    fi
+    [ -z "$cp_ver" ] && cp_ver="5.3.3"
+    # Strip edition prefix: pro-v5.3.3 → 5.3.3
+    cp_ver=$(echo "$cp_ver" | sed 's/^pro-v//;s/^lite-v//')
 
-	# pro-v5.3.3 → 程序版本号 5.3.3
-	# lite-v0.2.3 → 程序版本号 0.2.3
-	cp_ver=$(echo "$cp_ver" | sed 's/^pro-v//;s/^lite-v//')
+    echo "Starting ClawPanel: $CP_BIN --updater-standalone $cp_ver $CP_DATA $port $CP_OPENCLAW_DIR"
 
-	# 启动 ClawPanel，命令行参数传递数据目录和 OpenClaw 目录
-	# 格式: clawpanel --updater-standalone <version> <data_dir> <port> <openclaw_dir>
-	procd_open_instance
-	procd_set_param command "$CP_BIN" --updater-standalone "$cp_ver" "$CP_DATA" "$port" "$CP_OPENCLAW_DIR"
-	procd_set_param respawn 3600 10 5
-	procd_set_param stdout 1
-	procd_set_param stderr 1
-	procd_set_param pidfile /var/run/clawpanel.pid
-	procd_close_instance
+    procd_open_instance
+    procd_set_param command "$CP_BIN" --updater-standalone "$cp_ver" "$CP_DATA" "$port" "$CP_OPENCLAW_DIR"
+    procd_set_param respawn 3600 10 5
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param pidfile /var/run/clawpanel.pid
+    procd_close_instance
 
-	echo "ClawPanel 启动命令已提交 (端口 $port, OpenClaw目录: $CP_OPENCLAW_DIR)"
+    echo "ClawPanel started: port=$port openclaw_dir=$CP_OPENCLAW_DIR"
 }
 
 stop_service() {
-	local port
-	port=$(uci -q get clawpanel.main.port || echo "19527")
-	port=$(echo "$port" | tr -cd '0-9')
-	[ -z "$port" ] && port=19527
+    _load_uci 2>/dev/null || true
 
-	# 杀掉所有 clawpanel 相关进程
-	for pid in $(pgrep -f "clawpanel" 2>/dev/null); do
-		kill "$pid" 2>/dev/null
-	done
+    local port
+    port=$(uci -q get clawpanel.main.port || echo "19527")
+    port=$(echo "$port" | tr -cd '0-9')
+    [ -z "$port" ] && port=19527
 
-	# 等待端口释放
-	local i=0
-	while [ $i -lt 15 ]; do
-		if command -v ss >/dev/null 2>&1; then
-			ss -tulnp 2>/dev/null | grep -q ":${port} " || break
-		else
-			netstat -tulnp 2>/dev/null | grep -q ":${port} " || break
-		fi
-		usleep 200000 2>/dev/null || sleep 0.2
-		i=$((i + 1))
-	done
+    for pid in $(pgrep -f "clawpanel" 2>/dev/null); do
+        kill "$pid" 2>/dev/null
+    done
 
-	# 强制杀掉残留
-	local port_pid=""
-	if command -v ss >/dev/null 2>&1; then
-		port_pid=$(ss -tulnp 2>/dev/null | grep ":${port} " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)
-	else
-		port_pid=$(netstat -tulnp 2>/dev/null | grep ":${port} " | sed -n 's|.* \([0-9]*\)/.*|\1|p' | head -1)
-	fi
-	[ -n "$port_pid" ] && kill -9 "$port_pid" 2>/dev/null
+    local i=0
+    while [ $i -lt 15 ]; do
+        if ! netstat -tulnp 2>/dev/null | grep -q ":${port} "; then
+            break
+        fi
+        usleep 200000 2>/dev/null || sleep 0.2
+        i=$((i + 1))
+    done
 }
 
 service_triggers() {
-	procd_add_reload_trigger "clawpanel"
+    procd_add_reload_trigger "clawpanel"
 }
 
 reload_service() {
-	stop_service
-	sleep 1
-	start_service
+    stop_service
+    sleep 1
+    start_service
 }
 
 status_service() {
-	local port edition enabled
-	port=$(uci -q get clawpanel.main.port || echo "19527")
-	edition=$(uci -q get clawpanel.main.edition || echo "pro")
-	enabled=$(uci -q get clawpanel.main.enabled || echo "0")
+    _load_uci 2>/dev/null || true
 
-	echo "=== ClawPanel 服务状态 ==="
-	echo "启用状态: $enabled"
-	echo "版本:     $(get_cp_version)"
-	echo "安装路径: $CP_INSTALL_PATH"
-	echo "数据目录: $CP_DATA"
-	echo "OpenClaw目录: $CP_OPENCLAW_DIR"
-	echo "监听端口: $port"
-	echo "版本形态: $edition"
+    local port
+    port=$(uci -q get clawpanel.main.port || echo "19527")
+    local enabled
+    enabled=$(uci -q get clawpanel.main.enabled || echo "0")
 
-	if command -v ss >/dev/null 2>&1; then
-		ss -tulnp 2>/dev/null | grep ":${port} " && echo "状态:     运行中" || echo "状态:     未监听"
-	else
-		netstat -tulnp 2>/dev/null | grep ":${port} " && echo "状态:     运行中" || echo "状态:     未监听"
-	fi
+    echo "=== ClawPanel Status ==="
+    echo "enabled: $enabled"
+    echo "install_path: $CP_BASE_PATH"
+    echo "data_dir: $CP_DATA"
+    echo "openclaw_dir: $CP_OPENCLAW_DIR"
+    echo "binary: $CP_BIN"
+    echo "port: $port"
+    if [ -x "$CP_BIN" ]; then
+        echo "binary_version: $("$CP_BIN" --version 2>/dev/null | head -1)"
+    else
+        echo "binary: not found"
+    fi
+    if netstat -tulnp 2>/dev/null | grep -q ":${port} "; then
+        echo "status: RUNNING"
+    else
+        echo "status: NOT running"
+    fi
 }
