@@ -1,17 +1,18 @@
 #!/bin/sh
 # clawpanel-env - auto install ClawPanel from GitHub releases
 # Env vars:
-#   CP_BASE_PATH      installation base path, default /mnt/sda1
-#   CP_VERSION        optional fixed version like pro-v5.3.3; empty/latest = detect latest pro
-#   CP_OPENCLAW_DIR   optional OpenClaw data dir
+#   CP_BASE_PATH      installation base path
+#   CP_VERSION       optional fixed version like pro-v5.3.3; empty/latest = detect
+#   CP_OPENCLAW_DIR optional OpenClaw data dir; if empty, auto-derived
 
 set -e
 
-CP_BASE_PATH="${CP_BASE_PATH:-/mnt/sda1}"
+CP_BASE_PATH="${CP_BASE_PATH:-}"
 CP_VERSION="${CP_VERSION:-latest}"
 CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-}"
 
 [ "$(id -u)" = "0" ] || { echo "Error: must run as root"; exit 1; }
+[ -n "$CP_BASE_PATH" ] || { echo "Error: CP_BASE_PATH not set"; exit 1; }
 
 get_arch() {
     case "$(uname -m)" in
@@ -42,18 +43,11 @@ check_disk() {
 
 is_elf() {
     [ -f "$1" ] || return 1
-
-    # Try multiple portable methods because BusyBox/OpenWrt variants differ.
     local first4=""
-
     first4=$(od -An -tx1 -N4 "$1" 2>/dev/null | tr -d ' \n\r')
     [ -n "$first4" ] || first4=$(od -A n -t x1 -N 4 "$1" 2>/dev/null | tr -d ' \n\r')
-
-    if [ "$first4" = "7f454c46" ]; then
-        return 0
-    fi
-
-    # Fallback: if file is large enough to be a real binary, trust it.
+    [ "$first4" = "7f454c46" ] && return 0
+    # Fallback: large file is likely a real binary
     local fsize
     fsize=$(wc -c < "$1" 2>/dev/null || echo 0)
     [ -n "$fsize" ] && [ "$fsize" -gt 20000000 ]
@@ -65,7 +59,8 @@ get_latest_pro_version() {
         return
     fi
     local ver
-    ver=$(curl -sL --max-time 10 "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null \
+    ver=$(curl -sL --max-time 10 \
+        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null \
         | grep '"tag_name"' | cut -d'"' -f4 | grep '^pro-' | head -1 || true)
     if [ -z "$ver" ]; then
         printf '%s' "pro-v5.3.3"
@@ -89,7 +84,8 @@ download_binary() {
     echo "Downloading from: $url"
 
     local http_code
-    http_code=$(curl -sL --fail --connect-timeout 15 --max-time 1800 -o "$tmpfile" -w "%{http_code}" "$url" 2>/dev/null || true)
+    http_code=$(curl -sL --fail --connect-timeout 15 --max-time 1800 \
+        -o "$tmpfile" -w "%{http_code}" "$url" 2>/dev/null || true)
     if [ "$http_code" != "200" ]; then
         rm -f "$tmpfile"
         echo "Error: download failed (HTTP ${http_code:-unknown})"
@@ -116,46 +112,27 @@ download_binary() {
     echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') → $dest"
 }
 
-setup_uci() {
-    local install_path="$1"
-    local port="$2"
-    local version="$3"
-    uci set clawpanel.main.enabled='1'
-    uci set clawpanel.main.install_path="$install_path"
-    uci set clawpanel.main.port="$port"
-    uci set clawpanel.main.version="$version"
-    if [ -n "$CP_OPENCLAW_DIR" ]; then
-        uci set clawpanel.main.openclaw_dir="$CP_OPENCLAW_DIR"
-    fi
-    uci commit clawpanel
-}
-
 do_setup() {
     local cp_install_path="${CP_BASE_PATH}/clawpanel"
     local cp_data="${cp_install_path}/data"
     local cp_binary="${cp_install_path}/clawpanel"
     local cp_port="${CP_PORT:-19527}"
+    # OpenClaw 目录：如果环境变量未设置，自动推导为 <install_path>/clawpanel/data
     local openclaw_dir="${CP_OPENCLAW_DIR:-${cp_data}}"
-    local openclaw_app="${CP_OPENCLAW_APP:-${CP_BASE_PATH}/clawpanel/app}"
-    local openclaw_work="${CP_OPENCLAW_WORK:-${CP_BASE_PATH}/clawpanel/work}"
+    local openclaw_app="${CP_BASE_PATH}/clawpanel/app"
+    local openclaw_work="${CP_BASE_PATH}/clawpanel/work"
 
     echo "=== ClawPanel Setup ==="
     echo "Install path: $cp_install_path"
     echo "Data path: $cp_data"
-    echo "OpenClaw data path: $openclaw_dir"
-    echo "OpenClaw app path: $openclaw_app"
-    echo "OpenClaw work path: $openclaw_work"
+    echo "OpenClaw dir: $openclaw_dir"
+    echo "App dir: $openclaw_app"
+    echo "Work dir: $openclaw_work"
     echo "Port: $cp_port"
     echo "Architecture: $CP_ARCH"
 
     check_disk "$CP_BASE_PATH" 100 || exit 1
     mkdir -p "$CP_BASE_PATH" "$cp_install_path" "$cp_data" "$openclaw_dir" "$openclaw_app" "$openclaw_work"
-    echo "Directories created:"
-    echo "  - $CP_BASE_PATH"
-    echo "  - $cp_data"
-    echo "  - $openclaw_dir"
-    echo "  - $openclaw_app"
-    echo "  - $openclaw_work"
 
     echo "Detecting latest pro version..."
     local version
@@ -170,13 +147,16 @@ do_setup() {
     actual_ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "$version")
     echo "$actual_ver" > "${cp_install_path}/.version"
 
-    setup_uci "$CP_BASE_PATH" "$cp_port" "$actual_ver"
+    # 保存到 UCI（供 init.d 后续启动使用）
+    uci set clawpanel.main.enabled='1'
+    uci set clawpanel.main.install_path="$CP_BASE_PATH"
     uci set clawpanel.main.openclaw_dir="$openclaw_dir"
+    uci set clawpanel.main.port="$cp_port"
+    uci set clawpanel.main.version="$actual_ver"
     uci commit clawpanel
 
-    # 先生成/修正 clawpanel.json，避免程序默认写回 /root 路径
-    local json_file="${cp_data}/clawpanel.json"
-    cat > "$json_file" <<EOF
+    # 写入 clawpanel.json，避免程序生成时默认路径错误
+    cat > "${cp_data}/clawpanel.json" <<EOF
 {
   "port": ${cp_port},
   "dataDir": "${cp_data}",
@@ -189,20 +169,17 @@ do_setup() {
   "debug": false
 }
 EOF
-
-    echo "Wrote config: $json_file"
+    echo "Config written: ${cp_data}/clawpanel.json"
 
     echo "Starting ClawPanel..."
     /etc/init.d/clawpanel enable 2>/dev/null || true
     /etc/init.d/clawpanel start >/dev/null 2>&1 || true
 
-    echo "ClawPanel installation successful!"
-    echo "Installed at: $cp_binary"
-    echo "Data at: $cp_data"
-    echo "OpenClaw at: $openclaw_dir"
-    echo "App at: $openclaw_app"
-    echo "Work at: $openclaw_work"
-    echo "Port: $cp_port"
+    echo ""
+    echo "=== Installation Complete ==="
+    echo "Binary: $cp_binary"
+    echo "Config: ${cp_data}/clawpanel.json"
+    echo "OpenClaw dir: $openclaw_dir"
 }
 
 case "${1:-setup}" in

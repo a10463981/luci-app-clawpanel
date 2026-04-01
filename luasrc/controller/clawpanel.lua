@@ -62,7 +62,6 @@ function action_status()
 		enabled = enabled,
 		port = port,
 		install_path = install_path,
-		openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or "",
 		panel_running = false,
 		pid = "",
 		memory_kb = 0,
@@ -199,33 +198,38 @@ function action_service_ctl()
 
 		local version = http.formvalue("version") or ""
 		local install_path = http.formvalue("install_path") or ""
+		-- Sanitize: only allow safe chars
 		install_path = install_path:gsub("[^%w%-%./]", ""):gsub("/+$", "")
 
-		-- 保存安装路径到 UCI
-		sh("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
-
-		-- 保存 OpenClaw 数据目录到 UCI（留空则使用默认）
-		local openclaw_dir = http.formvalue("openclaw_dir") or ""
-		if openclaw_dir ~= "" then
-			openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", "")
-			sh("uci set clawpanel.main.openclaw_dir='" .. openclaw_dir .. "'; uci commit clawpanel 2>/dev/null")
+		if install_path == "" then
+			http.prepare_content("application/json")
+			http.write_json({ status = "error", message = "安装路径不能为空" })
+			return
 		end
 
+		-- 用户可选设置 OpenClaw 数据目录，留空则自动推导为 <install_path>/clawpanel/data
+		local openclaw_dir = http.formvalue("openclaw_dir") or ""
+		openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", "")
+		if openclaw_dir == "" then
+			-- 自动推导：跟随安装路径
+			openclaw_dir = install_path .. "/clawpanel/data"
+		end
+
+		-- 保存到 UCI
+		sh("uci set clawpanel.main.install_path='" .. install_path .. "'")
+		sh("uci set clawpanel.main.openclaw_dir='" .. openclaw_dir .. "'")
+		sh("uci commit clawpanel 2>/dev/null")
+
+		-- 通过环境变量传给 clawpanel-env（不过 UCI 已经保存了，脚本里会读 UCI）
 		local env_prefix = ""
 		if version ~= "" and version ~= "latest" then
 			env_prefix = "CP_VERSION=" .. version .. " "
 		end
 
-		-- 将 openclaw_dir 通过环境变量传给 clawpanel-env
-		local openclaw_env = ""
-		if openclaw_dir ~= "" then
-			openclaw_env = "CP_OPENCLAW_DIR='" .. openclaw_dir .. "' "
-		end
-
-		sh("( " .. env_prefix .. openclaw_env .. "CP_BASE_PATH='" .. install_path .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
+		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' CP_OPENCLAW_DIR='" .. openclaw_dir .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
 
 		http.prepare_content("application/json")
-		http.write_json({ status = "ok", message = "Installation started, please wait..." })
+		http.write_json({ status = "ok", message = "安装已开始，请等待..." })
 
 	else
 		http.prepare_content("application/json")
@@ -320,11 +324,8 @@ function action_uninstall()
 		log("No valid install path to remove")
 	end
 
-	log("Cleaning up UCI config (keeping install_path for reference)...")
-	sh("uci set clawpanel.main.openclaw_dir=''; uci commit clawpanel 2>/dev/null")
-
-	log("Cleaning up temporary files...")
-	sh("rm -f /tmp/clawpanel-setup.* /var/run/clawpanel.pid")
+	log("Cleaning up UCI config...")
+	sh("uci revert clawpanel 2>/dev/null; uci commit clawpanel 2>/dev/null")
 	log("Cleanup complete")
 	log("=== Uninstall Finished ===")
 

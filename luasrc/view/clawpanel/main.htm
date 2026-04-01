@@ -1,10 +1,10 @@
-<%#
+﻿<%#
 luci-app-clawpanel - OpenWrt LuCI Basic Configuration Template
 %>
 <%
 local uci = require("luci.model.uci").cursor()
 local sys = require "luci.sys"
-local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
+local install_path = uci:get("clawpanel", "main", "install_path") or ""
 local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or ""
 local port = uci:get("clawpanel", "main", "port") or "19527"
 local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface lan' | grep 'ipaddr' | cut -d\"'\" -f2") or ""
