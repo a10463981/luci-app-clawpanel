@@ -1,492 +1,213 @@
 #!/bin/sh
-# ============================================================================
-# clawpanel-env — ClawPanel 环境检测与安装脚本
-# 用法:
-#   clawpanel-env setup     — 完整安装 ClawPanel
-#   clawpanel-env check     — 检查环境状态
-#   clawpanel-env mounts    — 列出可用存储设备
-# 环境变量:
-#   CP_VERSION    — 指定 ClawPanel 版本，不设置则安装最新版
-#   CP_BASE_PATH  — 指定安装路径（必须为外置存储挂载点）
-#   CP_EDITION   — pro 或 lite（默认 pro；ARM64 路由器只能选 pro）
-# ============================================================================
+# clawpanel-env - ClawPanel installation script
+# Env vars:
+#   CP_BASE_PATH      - installation base path (e.g. /mnt/sda1)
+#   CP_VERSION        - version to install (e.g. pro-v5.3.3)
+#   CP_OPENCLAW_PATH  - OpenClaw data directory (e.g. /mnt/sda1/.openclaw)
+
 set -e
 
-# ── 版本配置 ──
-CP_VERSION="${CP_VERSION:-}"
-CP_BASE_PATH="${CP_BASE_PATH:-}"
-CP_EDITION="${CP_EDITION:-pro}"
+CP_BASE_PATH="${CP_BASE_PATH:-/mnt/sda1}"
+CP_VERSION="${CP_VERSION:-latest}"
+CP_OPENCLAW_PATH="${CP_OPENCLAW_PATH:-}"
 
-# 安装路径
-CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
-CP_DATA="${CP_INSTALL_PATH}/data"
-CP_BIN="${CP_INSTALL_PATH}/clawpanel"
+# Check if running as root
+if [ "$(id -u)" != "0" ]; then
+    echo "Error: This script must be run as root"
+    exit 1
+fi
 
-# GitHub
-CP_REPO="zhaoxinyi02/ClawPanel"
-CP_DOWNLOAD_BASE="https://github.com/${CP_REPO}/releases/download"
-CP_GITEE_BASE="https://gitee.com/zxy000006/ClawPanel/raw/main/release"
-
-# ── 不允许安装到的危险路径（系统分区）──
-is_dangerous_path() {
-	local p="$1"
-	# 匹配系统分区路径
-	case "$p" in
-		/|/boot|/overlay|/rom|/proc|/sys|/dev|/run|/tmp|/var|/etc|/root|/home|/usr|/bin|/sbin|/lib)
-			return 0
-			;;
-		/opt|/opt/clawpanel|/overlay/*)
-			return 0
-			;;
-	esac
-	return 1
+# Detect system
+detect_system() {
+    if [ -f /etc/openwrt_release ]; then
+        echo "openwrt"
+    elif [ -f /etc/debian_version ]; then
+        echo "debian"
+    elif [ -f /etc/arch-release ]; then
+        echo "arch"
+    else
+        echo "unknown"
+    fi
 }
 
-log_info() { echo "  [✓] $1"; }
-log_warn() { echo "  [!] $1"; }
-log_error() { echo "  [✗] $1"; }
-log_step()  { echo ""; echo "  ▶ $1"; }
+# Get OS type
+OS_TYPE=$(detect_system)
 
-# ── 检测 CPU 架构 ──
-detect_arch() {
-	local arch=$(uname -m)
-	case "$arch" in
-		x86_64)  echo "amd64" ;;
-		aarch64) echo "arm64" ;;
-		armv7l)  echo "armhf" ;;
-		armv6l)  echo "armv6" ;;
-		aarch32|arm) echo "arm" ;;
-		i386|i686) echo "386" ;;
-		mips)    echo "mips" ;;
-		mipsel|mips64el) echo "mipsle" ;;
-		*)       echo "$arch" ;;
-	esac
+# Detect architecture
+get_arch() {
+    local arch=$(uname -m)
+    case $arch in
+        aarch64) echo "arm64" ;;
+        armv7l)  echo "armv7" ;;
+        armv6l)  echo "armv6" ;;
+        x86_64)  echo "amd64" ;;
+        i386|i686) echo "amd64" ;;
+        *) echo "" ;;
+    esac
 }
 
-# ── 检测操作系统 ──
-detect_os() {
-	if [ -f /etc/openwrt_release ] || grep -qi "openwrt\|istoreos\|lede" /etc/os-release 2>/dev/null; then
-		echo "openwrt"
-	elif [ -f /etc/debian_version ]; then
-		echo "debian"
-	else
-		echo "linux"
-	fi
+CP_ARCH=$(get_arch)
+[ -z "$CP_ARCH" ] && { echo "Unsupported architecture: $(uname -m)"; exit 1; }
+
+# Detect download source
+get_download_url() {
+    local ver="$1"
+    local arch="$2"
+
+    # GitHub releases URL (primary)
+    local github_url="https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver#v}-linux-${arch}"
+    
+    # Try Gitee as fallback
+    local gitee_url="https://gitee.com/zxy000006/ClawPanel/raw/main/release/clawpanel-${ver#v}-linux-${arch}"
+    
+    # Prefer GitHub if accessible
+    if curl -sfI "$github_url" >/dev/null 2>&1; then
+        echo "$github_url"
+    else
+        echo "$gitee_url"
+    fi
 }
 
-# ── 获取最新版本号 ──
-get_latest_version() {
-	local edition="${1:-pro}"
-	# 先尝试 GitHub API
-	local ver
-	ver=$(curl -sf --connect-timeout 8 --max-time 15 \
-		"https://api.github.com/repos/${CP_REPO}/releases/latest" \
-		2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/' | tr -d '[:space:]')
-
-	# API 失败，尝试抓取 releases 页面 HTML
-	if [ -z "$ver" ]; then
-		ver=$(curl -sf --connect-timeout 15 --max-time 30 \
-			"https://github.com/${CP_REPO}/releases" \
-			2>/dev/null | grep -oE 'href="/'"${CP_REPO}"'/releases/tag/'"${edition}"'-[a-zA-Z0-9._-]+' \
-			| head -1 | sed 's|.*/releases/tag/||')
-	fi
-
-	# 仍失败，尝试 Gitee
-	if [ -z "$ver" ]; then
-		ver=$(curl -sf --connect-timeout 8 --max-time 15 \
-			"https://gitee.com/api/v5/repos/zxy000006/ClawPanel/releases/latest" \
-			2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/' | tr -d '[:space:]')
-	fi
-
-	# 严格验证：tag 必须以 edition- 开头
-	case "$ver" in
-		${edition}-*) echo "${ver}" ;;
-		*) echo "" ;;
-	esac
+# Check disk space
+check_disk() {
+    local path="$1"
+    local needed_mb="${2:-100}"
+    
+    if [ -d "$path" ]; then
+        local avail_mb=$(df -m "$path" | tail -1 | awk '{print $4}')
+        if [ "$avail_mb" -lt "$needed_mb" ]; then
+            echo "Error: Not enough disk space. Available: ${avail_mb}MB, needed: ${needed_mb}MB"
+            return 1
+        fi
+    fi
 }
 
-# ── 列出可用外置存储挂载点 ──
-# 返回格式: "挂载点|大小|文件系统;挂载点|大小|文件系统;..."
-list_mounts() {
-	# 排除系统关键挂载点，只列出外置存储
-	if command -v df >/dev/null 2>&1; then
-		df -h 2>/dev/null | awk 'NR>1 {
-			# 跳过系统分区
-			if ($1 ~ /^(tmpfs|devpts|proc|sysfs|devtmpfs|overlay|ram)/) next
-			if ($6 ~ /^(\/|/boot|/proc|/sys|/dev|/run|/tmp)/ && $6 != "/") next
-			if ($6 == "/" || $6 == "/overlay" || $6 == "/rom") next
-			# 跳过内存储备
-			if ($2 ~ /^[0-9]+[MG]?$/ && $2+0 < 50) next
-			printf "%s|%s|%s\n", $6, $4, $2
-		}' 2>/dev/null | grep '^/'
-	fi
+# Create directories
+create_dirs() {
+    local base="$1"
+    local data_dir="${2:-${base}/clawpanel/data}"
+    
+    mkdir -p "$base"
+    mkdir -p "$data_dir"
+    mkdir -p "${data_dir}/.openclaw"
+    
+    echo "Directories created:"
+    echo "  - $base"
+    echo "  - ${data_dir}"
+    echo "  - ${data_dir}/.openclaw"
 }
 
-# ── 检测目录所在分区是否是外置存储 ──
-is_external_storage() {
-	local dir="$1"
-	# 如果路径本身在 /mnt、/ext、/media、/storage 下，认为是外置
-	case "$dir" in
-		/mnt/*|/ext/*|/media/*|/storage/*|/data/*)
-			return 0
-			;;
-	esac
-	# 否则检查 df 输出
-	local mp=$(df "$dir" 2>/dev/null | awk 'NR>1{print $6}')
-	case "$mp" in
-		/|/overlay|/rom|/boot)
-			return 1
-			;;
-	esac
-	return 0
+# Download ClawPanel binary
+download_binary() {
+    local url="$1"
+    local dest="$2"
+    local filename=$(basename "$url")
+    
+    echo "Downloading from: $url"
+    
+    local tmpfile="/tmp/clawpanel_bin_$$"
+    if curl -L -o "$tmpfile" "$url" 2>&1; then
+        # Check if download is valid
+        if [ -s "$tmpfile" ] && file "$tmpfile" | grep -q -i "executable\|elf"; then
+            mv -f "$tmpfile" "$dest"
+            chmod +x "$dest"
+            echo "Binary downloaded and installed: $dest"
+            return 0
+        else
+            rm -f "$tmpfile"
+            echo "Error: Downloaded file is invalid"
+            return 1
+        fi
+    else
+        rm -f "$tmpfile"
+        echo "Error: Download failed"
+        return 1
+    fi
 }
 
-# ── 下载文件（支持 GitHub + Gitee 双源 + 重试）──
-download_file() {
-	local url="$1"
-	local dest="$2"
-	local gitee_base="https://gitee.com/zxy000006/ClawPanel/raw/main/release"
-
-	# 构造 Gitee 镜像 URL
-	local gitee_url=""
-	case "$url" in
-		https://github.com/zhaoxinyi02/ClawPanel/releases/download/*)
-			gitee_url=$(echo "$url" | sed 's|https://github.com/zhaoxinyi02/ClawPanel/releases/download|'"$gitee_base"'|')
-			;;
-	esac
-
-	local ok=false
-	local http_code=""
-
-	# 尝试从 GitHub 下载（3次重试）
-	for try in 1 2 3; do
-		if [ $try -gt 1 ]; then
-			log_info "  第 ${try} 次重试 GitHub..."
-			sleep 3
-		fi
-		http_code=$(curl -sf --connect-timeout 20 --max-time 180 -L \
-			-o "$dest" -w "%{http_code}" "$url" 2>/dev/null || echo "000")
-		if [ "$http_code" = "200" ]; then
-			ok=true
-			break
-		else
-			log_info "  GitHub HTTP $http_code ($(cat /proc/uptime | awk '{print $1}' | cut .1)s)"
-		fi
-	done
-
-	# GitHub 失败，尝试 Gitee
-	if [ "$ok" != "true" ] && [ -n "$gitee_url" ]; then
-		log_info "  尝试 Gitee 备用源..."
-		for try in 1 2; do
-			if [ $try -gt 1 ]; then sleep 2; fi
-			http_code=$(curl -sf --connect-timeout 20 --max-time 180 -L \
-				-o "$dest" -w "%{http_code}" "$gitee_url" 2>/dev/null || echo "000")
-			if [ "$http_code" = "200" ]; then
-				ok=true
-				log_info "  Gitee 下载成功"
-				break
-			fi
-		done
-	fi
-
-	$ok
+# Setup uci config
+setup_uci() {
+    local install_path="$1"
+    local port="${2:-19527}"
+    local version="$3"
+    
+    uci set clawpanel.main.enabled='1'
+    uci set clawpanel.main.install_path="$install_path"
+    uci set clawpanel.main.port="$port"
+    uci set clawpanel.main.version="$version"
+    uci commit clawpanel
+    echo "UCI configuration saved"
 }
 
-# ── 安装 ClawPanel ──
+# Main setup function
 do_setup() {
-	log_step "开始安装 ClawPanel"
-
-	# ── 检查是否指定了安装路径 ──
-	if [ -z "$CP_BASE_PATH" ]; then
-		log_error "未指定安装路径（CP_BASE_PATH）"
-		echo ""
-		echo "  请通过 LuCI 界面选择安装路径（必须为外置存储挂载点）。"
-		echo "  可用挂载点："
-		list_mounts | while IFS='|' read -r mp size fs; do
-			echo "    $mp  ($size, $fs)"
-		done
-		return 1
-	fi
-
-	# ── 危险路径检查 ──
-	if is_dangerous_path "$CP_BASE_PATH"; then
-		log_error "禁止将 ClawPanel 安装到系统分区: $CP_BASE_PATH"
-		echo ""
-		echo "  ⚠️  系统分区空间有限，且重装后数据会丢失！"
-		echo "  请选择外置存储挂载点，如 /mnt/data、/mnt/sda1、/storage 等。"
-		return 1
-	fi
-
-	# ── 确认是外置存储 ──
-	if ! is_external_storage "$CP_BASE_PATH"; then
-		log_warn "安装路径 $CP_BASE_PATH 可能不是外置存储"
-		log_warn "强烈建议使用 /mnt、/ext、/storage 等外置存储挂载点"
-		log_warn "继续安装将覆盖系统文件，且数据在重装后会丢失！"
-		if [ "$CP_FORCE" != "1" ]; then
-			log_error "中止安装。如需强制安装请设置 CP_FORCE=1"
-			return 1
-		fi
-	fi
-
-	echo "  安装路径: $CP_BASE_PATH"
-	echo "  程序目录: $CP_INSTALL_PATH"
-	echo "  数据目录: $CP_DATA"
-
-	# ── 系统检测 ──
-	log_info "检测系统环境..."
-	local os=$(detect_os)
-	local arch=$(detect_arch)
-	echo "  操作系统: $os"
-	echo "  CPU 架构: $arch"
-
-	# ── 版本解析 ──
-	local version="$CP_VERSION"
-	if [ -z "$version" ]; then
-		log_info "获取最新版本..."
-		version=$(get_latest_version "$CP_EDITION")
-
-		# API 全部失败时，使用已知最新稳定版（降级方案）
-		if [ -z "$version" ]; then
-			log_warn "无法连接版本服务器，使用内置版本号..."
-			case "$CP_EDITION" in
-				lite) version="lite-v0.2.3" ;;
-				*)    version="pro-v5.3.3" ;;
-			esac
-			log_info "使用内置版本: $version"
-		else
-			log_info "检测到最新版本: $version"
-		fi
-	fi
-
-	# 验证 version 以 edition- 开头
-	case "$version" in
-		${CP_EDITION}-*) ;;
-		*)
-			log_error "版本 $version 与 edition($CP_EDITION) 不匹配，请指定正确版本"
-			return 1
-			;;
-	esac
-
-	# 从 tag 提取纯版本号（如 pro-v5.3.3 → 5.3.3，lite-v0.2.3 → 0.2.3）
-	local base_version="${version#${CP_EDITION}-}"
-
-	# 确定 CPU 架构
-	local arch=$(detect_arch)
-	local os_name="linux"
-
-	# 确定二进制文件名
-	# Pro: clawpanel-{ver}-linux-{arch}   (ver = v5.3.3)
-	# Lite: clawpanel-lite-core-{ver}-linux-{arch} (ver = v0.2.3)
-	local filename=""
-	if [ "$CP_EDITION" = "lite" ]; then
-		filename="clawpanel-lite-core-${base_version}-${os_name}-${arch}.tar.gz"
-	else
-		filename="clawpanel-${base_version}-${os_name}-${arch}"
-	fi
-
-	log_info "下载文件: $filename"
-
-	# 下载 URL
-	local download_url="${CP_DOWNLOAD_BASE}/${version}/${filename}"
-	log_info "下载链接: $download_url"
-
-	# ── 检查磁盘空间（需要 ≥ 500MB）──
-	log_info "检查磁盘空间..."
-	local avail_kb=$(df -k "$CP_BASE_PATH" 2>/dev/null | awk 'NR>1 {print $4}')
-	local avail_mb=$((avail_kb / 1024))
-	if [ "$avail_mb" -lt 500 ]; then
-		log_error "磁盘空间不足: ${avail_mb}MB，可用于安装需要 ≥ 500MB"
-		return 1
-	fi
-	log_info "可用空间: ${avail_mb}MB ✅"
-
-	# ── 创建目录 ──
-	log_info "创建安装目录..."
-	if ! mkdir -p "$CP_INSTALL_PATH" 2>/dev/null; then
-		log_error "无法创建目录: $CP_INSTALL_PATH"
-		return 1
-	fi
-	mkdir -p "$CP_DATA" 2>/dev/null || true
-
-	# ── 下载二进制 ──
-	local tmpfile="/tmp/clawpanel-install-$$.bin"
-	log_info "下载 ClawPanel ${base_version}..."
-
-	if ! download_file "$download_url" "$tmpfile"; then
-		log_error "下载失败（请检查网络或尝试指定版本）"
-		rm -f "$tmpfile"
-		return 1
-	fi
-
-	# ── 验证文件 ──
-	local size=$(wc -c < "$tmpfile" 2>/dev/null | tr -d '[:space:]')
-	if [ "$size" -lt 100000 ]; then
-		log_error "下载文件过小 (${size} bytes)，下载可能失败"
-		rm -f "$tmpfile"
-		return 1
-	fi
-	log_info "下载完成 (${size} bytes)"
-
-	# ── 安装二进制 ──
-	log_info "安装二进制文件..."
-	if [ -f "$CP_BIN" ]; then
-		mv "$CP_BIN" "${CP_BIN}.bak" 2>/dev/null || true
-	fi
-
-	# 判断是 tar.gz 包还是直接二进制（Pro 是单文件，Lite 是 .tar.gz）
-	case "$filename" in
-		*.tar.gz)
-			log_info "解压 Lite 安装包..."
-			if ! tar -xzf "$tmpfile" -C /tmp 2>&1; then
-				log_error "解压失败"
-				rm -f "$tmpfile"
-				return 1
-			fi
-			# 查找解压出来的二进制文件
-			local bin_path
-			bin_path=$(find /tmp -name "clawpanel*" -type f -executable 2>/dev/null | head -1)
-			if [ -z "$bin_path" ] || [ ! -x "$bin_path" ]; then
-				log_error "解压后未找到可执行文件"
-				rm -f "$tmpfile"
-				return 1
-			fi
-			log_info "找到二进制: $bin_path"
-			mv "$bin_path" "$CP_BIN"
-			rm -f "$tmpfile"
-			rm -rf /tmp/clawpanel* 2>/dev/null || true
-			;;
-		*)
-			# 直接二进制（Pro）
-			mv "$tmpfile" "$CP_BIN"
-			;;
-	esac
-	chmod +x "$CP_BIN"
-
-	# ── 创建目录结构 ──
-	mkdir -p "${CP_DATA}/.openclaw" 2>/dev/null || true
-
-	# ── 写入版本信息 ──
-	echo "$base_version" > "${CP_INSTALL_PATH}/.version"
-
-	# ── 配置 UCI ──
-	uci set clawpanel.main.install_path="$CP_BASE_PATH"
-	uci set clawpanel.main.enabled='1'
-	uci commit clawpanel
-
-	# ── 验证安装 ──
-	local installed_ver=$("$CP_BIN" --version 2>/dev/null | tr -d '[:space:]' || echo "unknown")
-	log_info "安装完成!"
-	log_info "ClawPanel 版本: $base_version ($CP_EDITION)"
-	log_info "程序目录: $CP_INSTALL_PATH"
-	log_info "数据目录: $CP_DATA"
-	log_info "监听端口: 19527"
-
-	# ── 开机自启 ──
-	/etc/init.d/clawpanel enable 2>/dev/null
-	log_info "已启用开机自启"
-
-	# ── 启动服务 ──
-	log_info "启动 ClawPanel 服务..."
-	/etc/init.d/clawpanel start 2>/dev/null
-
-	echo ""
-	echo "=========================================="
-	echo "  ClawPanel 安装成功!"
-	echo "  版本: ${base_version} (${CP_EDITION})"
-	echo "  程序: $CP_INSTALL_PATH"
-	echo "  数据: $CP_DATA"
-	echo "  访问地址: http://路由器IP:19527"
-	echo "  默认密码: clawpanel"
-	echo "=========================================="
-
-	return 0
+    local cp_install_path="${CP_BASE_PATH}/clawpanel"
+    local cp_data="${CP_BASE_PATH}/clawpanel/data"
+    local cp_binary="${cp_install_path}/clawpanel"
+    local cp_port="${CP_PORT:-19527}"
+    
+    echo "=== ClawPanel Setup ==="
+    echo "Install path: $cp_install_path"
+    echo "Data path: $cp_data"
+    echo "OpenClaw data path: ${CP_OPENCLAW_PATH:-not set (will use default)}"
+    echo "Port: $cp_port"
+    echo "Architecture: $CP_ARCH"
+    echo "Version: $CP_VERSION"
+    
+    # Check disk space (need ~100MB)
+    check_disk "$CP_BASE_PATH" 100 || exit 1
+    
+    # Create directories
+    create_dirs "$CP_BASE_PATH" "$cp_data"
+    
+    # Determine version
+    local ver="$CP_VERSION"
+    if [ "$ver" = "latest" ] || [ -z "$ver" ]; then
+        echo "Detecting latest version..."
+        # Fetch latest version from GitHub API
+        ver=$(curl -s https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
+        if [ -z "$ver" ]; then
+            ver="pro-v5.3.3"
+        fi
+        echo "Latest version: $ver"
+    fi
+    
+    # Download binary
+    local download_url=$(get_download_url "$ver" "$CP_ARCH")
+    download_binary "$download_url" "$cp_binary" || exit 1
+    
+    # Get actual version
+    local actual_ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "$ver")
+    echo "ClawPanel version: $actual_ver"
+    echo "$actual_ver" > "${cp_install_path}/.version"
+    
+    # Save OpenClaw data path to file if specified
+    if [ -n "$CP_OPENCLAW_PATH" ]; then
+        echo "$CP_OPENCLAW_PATH" > "${cp_install_path}/.openclaw_path"
+        echo "OpenClaw data path saved: $CP_OPENCLAW_PATH"
+    fi
+    
+    # Setup UCI
+    setup_uci "$CP_BASE_PATH" "$cp_port" "$actual_ver"
+    
+    # Enable and start service
+    echo "Enabling service..."
+    /etc/init.d/clawpanel enable 2>/dev/null
+    /etc/init.d/clawpanel start >/dev/null 2>&1
+    
+    echo "ClawPanel installation successful!"
+    echo "Installed at: $cp_binary"
+    echo "Data at: $cp_data"
+    echo "Port: $cp_port"
 }
 
-# ── 检查环境状态 ──
-do_check() {
-	echo "=== ClawPanel 环境检查 ==="
-	echo "安装路径: ${CP_BASE_PATH:-未设置}"
-
-	if [ -x "$CP_BIN" ]; then
-		echo "ClawPanel: 已安装 ($("$CP_BIN" --version 2>/dev/null | tr -d '[:space:]'))"
-	else
-		echo "ClawPanel: 未安装"
-	fi
-
-	if pgrep -f "clawpanel" >/dev/null 2>&1; then
-		echo "进程状态: 运行中"
-	else
-		echo "进程状态: 未运行"
-	fi
-}
-
-# ── 列出可用挂载点 ──
-do_mounts() {
-	echo "可用外置存储挂载点："
-	local found=0
-	list_mounts | while IFS='|' read -r mp size fs; do
-		echo "  $mp  (可用: $size, 文件系统: $fs)"
-		found=1
-	done
-	if [ "$found" = "0" ]; then
-		echo "  未检测到外置存储挂载点。"
-		echo "  请先在 LuCI → 系统 → 挂载点 中挂载 USB/硬盘后重试。"
-	fi
-}
-
-# ── 获取最新版本 ──
-do_version() {
-	local ver
-	ver=$(get_latest_version)
-	if [ -z "$ver" ]; then
-		echo "无法获取最新版本"
-		return 1
-	fi
-	echo "$ver"
-}
-
-# ── 卸载 ──
-do_uninstall() {
-	if [ -z "$CP_BASE_PATH" ]; then
-		CP_BASE_PATH=$(uci -q get clawpanel.main.install_path || echo "/opt")
-	fi
-
-	log_step "卸载 ClawPanel"
-	/etc/init.d/clawpanel stop 2>/dev/null
-	/etc/init.d/clawpanel disable 2>/dev/null
-
-	if [ -d "$CP_INSTALL_PATH" ]; then
-		log_info "删除安装目录: $CP_INSTALL_PATH"
-		rm -rf "$CP_INSTALL_PATH"
-	fi
-
-	uci set clawpanel.main.enabled='0'
-	uci commit clawpanel
-
-	log_info "卸载完成"
-}
-
-# ── 主逻辑 ──
-ACTION="${1:-}"
-
-case "$ACTION" in
-	setup)   do_setup ;;
-	check)   do_check ;;
-	mounts)  do_mounts ;;
-	version) do_version ;;
-	uninstall) do_uninstall ;;
-	*)
-		echo "ClawPanel 环境管理脚本"
-		echo ""
-		echo "用法:"
-		echo "  clawpanel-env setup     安装 ClawPanel（需指定 CP_BASE_PATH）"
-		echo "  clawpanel-env check    检查环境状态"
-		echo "  clawpanel-env mounts   列出可用存储挂载点"
-		echo "  clawpanel-env version  获取最新版本号"
-		echo "  clawpanel-env uninstall 卸载 ClawPanel"
-		echo ""
-		echo "环境变量:"
-		echo "  CP_VERSION    指定版本号"
-		echo "  CP_BASE_PATH 指定安装路径（必须为外置存储挂载点）"
-		;;
+# Main entry
+case "${1:-setup}" in
+    setup)
+        do_setup
+        ;;
+    *)
+        echo "Usage: $0 [setup]"
+        exit 1
+        ;;
 esac
