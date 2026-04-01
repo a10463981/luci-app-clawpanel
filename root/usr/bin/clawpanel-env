@@ -92,19 +92,18 @@ get_url() {
 # Determine version tag
 get_version() {
     if [ -n "$CP_VERSION" ] && [ "$CP_VERSION" != "latest" ]; then
-        echo "$CP_VERSION"
+        printf '%s' "$CP_VERSION"
         return
     fi
-    echo "Detecting latest pro version..."
     local ver
     ver=$(curl -sL --max-time 8 \
         "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null \
         | grep '"tag_name"' | head -10 | cut -d'"' -f4 \
         | grep '^pro-' | head -1 || echo "")
     if [ -z "$ver" ] || ! echo "$ver" | grep -q '^pro-'; then
-        echo "pro-v5.3.3"
+        printf '%s' "pro-v5.3.3"
     else
-        echo "$ver"
+        printf '%s' "$ver"
     fi
 }
 
@@ -204,6 +203,7 @@ do_setup() {
     create_dirs "$CP_BASE_PATH" "$cp_data" "$openclaw_dir"
 
     local version
+    echo "Detecting latest pro version..."
     version=$(get_version)
     echo "Using version: $version"
 
