@@ -244,11 +244,18 @@ do_setup() {
 	if [ -z "$version" ]; then
 		log_info "获取最新版本..."
 		version=$(get_latest_version "$CP_EDITION")
+
+		# API 全部失败时，使用已知最新稳定版（降级方案）
 		if [ -z "$version" ]; then
-			log_error "无法获取最新版本，请检查网络连接"
-			return 1
+			log_warn "无法连接版本服务器，使用内置版本号..."
+			case "$CP_EDITION" in
+				lite) version="lite-v0.2.3" ;;
+				*)    version="pro-v5.3.3" ;;
+			esac
+			log_info "使用内置版本: $version"
+		else
+			log_info "检测到最新版本: $version"
 		fi
-		log_info "检测到最新版本: $version"
 	fi
 
 	# 验证 version 以 edition- 开头
