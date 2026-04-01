@@ -167,15 +167,17 @@ do_setup() {
     create_dirs "$CP_BASE_PATH" "$cp_data" "${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
 
     # Determine version
+    # Determine version - default to pro-v5.3.3 (stable) to avoid GitHub API issues
     local ver="$CP_VERSION"
     if [ "$ver" = "latest" ] || [ -z "$ver" ]; then
-        echo "Detecting latest version..."
-        ver=$(curl -sL --max-time 10 "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-        if [ -z "$ver" ]; then
+        # Try GitHub API with short timeout
+        echo "Detecting latest pro version..."
+        ver=$(curl -sL --max-time 5 "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null | grep '"tag_name"' | head -5 | cut -d'"' -f4 | grep '^pro-' | head -1 || echo "")
+        if [ -z "$ver" ] || ! echo "$ver" | grep -q '^pro-'; then
             ver="pro-v5.3.3"
-            echo "Version API unavailable, using default: $ver"
+            echo "Using stable default: $ver"
         else
-            echo "Latest version: $ver"
+            echo "Latest pro version: $ver"
         fi
     fi
 
