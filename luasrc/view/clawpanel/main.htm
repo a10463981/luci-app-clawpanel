@@ -65,50 +65,49 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 <div class="modal-hdr">
 <span class="mh-title" id="cp-modal-title">ClawPanel</span>
 <span class="mh-status" id="cp-modal-status" style="color:#888;font-size:12px;margin-right:10px"></span>
-<button class="mh-close" id="cp-modal-close" title="Close">&times;</button>
+<button class="mh-close" id="cp-modal-close" title="鍏抽棴">&times;</button>
 </div>
 <div class="modal-body" id="cp-modal-log"><pre id="cp-modal-log-content"></pre></div>
 <div class="modal-foot">
-<button class="cp-btn cp-btn-action" id="cp-modal-okbtn" style="display:none" onclick="cpModalClose()">Close</button>
+<button class="cp-btn cp-btn-action" id="cp-modal-okbtn" style="display:none" onclick="cpModalClose()">鍏抽棴</button>
 </div>
 </div>
 </div>
 
 <!-- Main Panel -->
 <div id="cp-panel">
-<div class="panel-title">ClawPanel Service Control</div>
+<div class="panel-title">ClawPanel 鏈嶅姟鎺у埗</div>
 <table>
-<tr><td>Status</td><td><span id="cp-st-status"><span class="cp-badge cp-badge-unknown">Unknown</span></span></td></tr>
-<tr><td>Port</td><td id="cp-st-port"><%=port%></td></tr>
+<tr><td>鐘舵€?/td><td><span id="cp-st-status"><span class="cp-badge cp-badge-unknown">鏈煡</span></span></td></tr>
+<tr><td>绔彛</td><td id="cp-st-port"><%=port%></td></tr>
 <tr><td>PID</td><td id="cp-st-pid">-</td></tr>
-<tr><td>Memory</td><td id="cp-st-mem">-</td></tr>
-<tr><td>Uptime</td><td id="cp-st-uptime">-</td></tr>
-<tr><td>Version</td><td id="cp-st-ver">-</td></tr>
-<tr><td>Install Path</td><td id="cp-st-path"><%=install_path%></td></tr>
-<tr><td>Disk Free</td><td id="cp-st-disk">-</td></tr>
+<tr><td>鍐呭瓨</td><td id="cp-st-mem">-</td></tr>
+<tr><td>杩愯鏃堕棿</td><td id="cp-st-uptime">-</td></tr>
+<tr><td>鐗堟湰</td><td id="cp-st-ver">-</td></tr>
+<tr><td>瀹夎璺緞</td><td id="cp-st-path"><%=install_path%></td></tr>
+<tr><td>鍓╀綑绌洪棿</td><td id="cp-st-disk">-</td></tr>
 </table>
 </div>
 
 <div id="cp-path">
-<label>Install Path:</label>
+<label>瀹夎璺緞锛?/label>
 <input type="text" id="f-path" value="<%=install_path%>" placeholder="/mnt/sda1">
 </div>
 
 <div id="cp-actions">
-<button class="cp-btn cp-btn-apply" onclick="doInstall()">Install / Reinstall ClawPanel</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('restart')">Restart</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('stop')">Stop</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('start')">Start</button>
-<button class="cp-btn cp-btn-remove" onclick="doUninstall()">Uninstall</button>
-<a href="http://<%=lan_addr%>:<%=port%>" target="_blank" class="cp-btn cp-btn-web">Open ClawPanel</a>
-<button class="cp-btn cp-btn-action" onclick="updateStatus()" style="float:right">Refresh Status</button>
+<button class="cp-btn cp-btn-apply" onclick="doInstall()">瀹夎 / 閲嶈 ClawPanel</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('restart')">閲嶅惎</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('stop')">鍋滄</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('start')">鍚姩</button>
+<button class="cp-btn cp-btn-remove" onclick="doUninstall()">鍗歌浇</button>
+<button class="cp-btn cp-btn-web" onclick="window.open('http://<%=lan_addr%>:<%=port%>', '_blank')">鎵撳紑 ClawPanel</button>
+<button class="cp-btn cp-btn-action" onclick="updateStatus()" style="float:right">鍒锋柊鐘舵€?/button>
 </div>
 
 <div id="cp-hint">
-<strong>Installation Tips:</strong><br>
-Open ClawPanel at <a href="http://<%=lan_addr%>:<%=port%>" target="_blank">http://<%=lan_addr%>:<%=port%></a><br>
-<strong>Recommended path:</strong> Use external storage mount points like <code>/mnt/sda1</code>, <code>/mnt/data</code>, <code>/storage</code>. System paths are blocked.
-</div>
+<strong>瀹夎鎻愮ず锛?/strong><br>
+鎵撳紑 ClawPanel锛?button class="cp-btn cp-btn-web" style="font-size:12px;padding:2px 10px" onclick="window.open('http://<%=lan_addr%>:<%=port%>', '_blank')">http://<%=lan_addr%>:<%=port%></button><br>
+<strong>寤鸿璺緞锛?/strong>浣跨敤澶栫疆瀛樺偍鎸傝浇鐐癸紝濡?<code>/mnt/sda1</code>銆?code>/mnt/data</code>銆?code>/storage</code>銆傜郴缁熻矾寰勫凡琚睆钄姐€?</div>
 
 <script type="text/javascript">
 //<![CDATA[
@@ -195,19 +194,19 @@ function updateStatus() {
 
             if (en !== '1' && en !== '0') {
                 // not configured at all
-                stEl.innerHTML = '<span class="cp-badge cp-badge-unknown">Not Configured</span>';
+                stEl.innerHTML = '<span class="cp-badge cp-badge-unknown">鏈厤缃?/span>';
             } else if (en === '0') {
                 if (d.panel_running) {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-enabling">Enabled=false but Running</span>';
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-enabling">宸插仠姝紙杩愯涓級</span>';
                 } else {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-disabled">Disabled</span>';
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-disabled">宸茬鐢?/span>';
                 }
             } else {
                 // enabled == '1'
                 if (d.panel_running) {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-running">Running</span>';
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-running">杩愯涓?/span>';
                 } else {
-                    stEl.innerHTML = '<span class="cp-badge cp-badge-stopped">Stopped</span>';
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-stopped">宸插仠姝?/span>';
                 }
             }
 
