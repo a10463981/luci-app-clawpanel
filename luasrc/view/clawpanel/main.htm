@@ -5,8 +5,12 @@ luci-app-clawpanel - OpenWrt LuCI Basic Configuration Template
 local uci = require("luci.model.uci").cursor()
 local sys = require "luci.sys"
 local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
-local openclaw_path = uci:get("clawpanel", "main", "openclaw_path") or "/mnt/sda1/.openclaw"
-local openclaw_path = uci:get("clawpanel", "main", "openclaw_path") or "/mnt/sda1/.openclaw"
+local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or ""
+local openclaw_app = uci:get("clawpanel", "main", "openclaw_app") or ""
+local openclaw_work = uci:get("clawpanel", "main", "openclaw_work") or ""
+local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or ""
+local openclaw_app = uci:get("clawpanel", "main", "openclaw_app") or ""
+local openclaw_work = uci:get("clawpanel", "main", "openclaw_work") or ""
 local port = uci:get("clawpanel", "main", "port") or "19527"
 local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface lan' | grep 'ipaddr' | cut -d\"'\" -f2") or ""
 if lan_addr == "" then lan_addr = "192.168.1.1" end
@@ -143,25 +147,29 @@ function updateStatus() {
         $('cp-st-ver').textContent = d.panel_version || d.installed_version || '-';
         $('cp-st-path').textContent = d.install_path || '-';
         $('cp-st-disk').textContent = d.disk_free || '-';
-        $('cp-st-openclaw-path').textContent = d.openclaw_path || '-';
-        $('f-openclaw-path').value = d.openclaw_path || '';
+        $('cp-st-openclaw-path').textContent = d.openclaw_dir || '-';
+        $('f-openclaw-dir').value = d.openclaw_dir || '';
     });
 }
 
 function doInstall() {
     var path = $('f-path').value.trim();
-    var openclawPath = $('f-openclaw-path').value.trim();
+    var openclawDir = $('f-openclaw-dir').value.trim();
+    var openclawApp = $('f-openclaw-app').value.trim();
+    var openclawWork = $('f-openclaw-work').value.trim();
     if (!path) { alert('请输入安装路径'); return; }
     if (path === '/' || path.indexOf('/overlay') === 0 || path.indexOf('/proc') === 0 || path.indexOf('/sys') === 0 || path.indexOf('/dev') === 0 || path.indexOf('/etc') === 0) {
         alert('系统路径被禁止，请使用外置存储路径'); return;
     }
-    if (!openclawPath || openclawPath === '/' || openclawPath.indexOf('/proc') === 0 || openclawPath.indexOf('/sys') === 0 || openclawPath.indexOf('/dev') === 0) {
-        alert('OpenClaw 数据目录路径无效'); return;
-    }
+    // openclaw paths are optional - empty uses defaults
     showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...');
     // Fire-and-forget using Image object - no page navigation
     var img = new Image();
-    img.src = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path) + '&openclaw_path=' + encodeURIComponent(openclawPath);
+    var url = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
+    if (openclawDir) url += '&openclaw_dir=' + encodeURIComponent(openclawDir);
+    if (openclawApp) url += '&openclaw_app=' + encodeURIComponent(openclawApp);
+    if (openclawWork) url += '&openclaw_work=' + encodeURIComponent(openclawWork);
+    img.src = url;
     var poll = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
             $('cp-modal-content').innerHTML = (d.log || '等待日志...').replace(/\n/g, '<br>');
