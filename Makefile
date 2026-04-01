@@ -57,6 +57,8 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/view/clawpanel
 	$(INSTALL_DATA) ./luasrc/view/clawpanel/status.htm $(1)/usr/lib/lua/luci/view/clawpanel/status.htm
 	$(INSTALL_DATA) ./luasrc/view/clawpanel/basic.htm $(1)/usr/lib/lua/luci/view/clawpanel/basic.htm
+	$(INSTALL_DATA) ./luasrc/view/clawpanel/basic_install.htm $(1)/usr/lib/lua/luci/view/clawpanel/basic_install.htm
+	$(INSTALL_DATA) ./luasrc/view/clawpanel/basic_uninstall.htm $(1)/usr/lib/lua/luci/view/clawpanel/basic_uninstall.htm
 	$(INSTALL_DIR) $(1)/usr/share/clawpanel
 	$(INSTALL_DATA) ./VERSION $(1)/usr/share/clawpanel/VERSION
 endef

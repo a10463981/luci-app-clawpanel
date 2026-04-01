@@ -1,0 +1,77 @@
+<%#
+basic_uninstall.htm — ClawPanel 卸载确认页面
+-%>
+
+<style>
+.cp-box{border:1px solid #f5c6cb;background:#ffeef0;border-radius:8px;padding:20px 24px;margin-bottom:20px;}
+.cp-title{color:#cf222e;font-size:16px;font-weight:600;margin:0 0 10px 0;}
+.cp-text{color:#333;font-size:13px;line-height:1.7;}
+.cp-btn{display:inline-block;padding:8px 20px;border-radius:6px;font-size:13px;cursor:pointer;border:none;color:#fff;}
+.cp-btn-danger{background:#cf222e;}
+.cp-btn-default{background:#6c757d;}
+.cp-btn:hover{opacity:0.85;}
+.cp-result{border:1px solid #c6e9c9;background:#e6f7e9;border-radius:8px;padding:16px 20px;margin-top:16px;}
+</style>
+
+<h2>🗑 卸载 ClawPanel</h2>
+
+<div class="cp-box">
+<h3 class="cp-title">⚠️ 确定要卸载 ClawPanel 吗？</h3>
+<p class="cp-text">
+此操作将执行以下步骤：<br/>
+1. 停止 ClawPanel 服务<br/>
+2. 禁用开机自启<br/>
+3. 删除程序目录（<code id="cp-path-display">/mnt/xxx/clawpanel</code>）<br/>
+4. 清除 UCI 配置中的 enabled 状态<br/><br/>
+<strong style="color:#cf222e">所有数据将被永久删除，且不可恢复！</strong>
+</p>
+</div>
+
+<div style="margin-bottom:20px;">
+<button class="cp-btn cp-btn-danger" id="btn-uninstall" onclick="cpDoUninstall()">🗑 确定卸载</button>
+<a href="/cgi-bin/luci/admin/services/clawpanel"><button class="cp-btn cp-btn-default">← 返回</button></a>
+</div>
+
+<div id="cp-result" style="display:none;"></div>
+
+<script>
+var BASE = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>';
+
+function cpDoUninstall() {
+	var btn = document.getElementById('btn-uninstall');
+	var result = document.getElementById('cp-result');
+	btn.disabled = true;
+	btn.textContent = '⏳ 正在卸载...';
+
+	var x = new XHR();
+	x.get(BASE + '/uninstall', null, function(xr) {
+		try {
+			var r = JSON.parse(xr.responseText);
+			result.style.display = 'block';
+			if (r.status == 'ok') {
+				result.innerHTML = '<div class="cp-result"><strong style="color:#1a7f37">✅ 卸载完成！</strong><br/><span style="color:#555;font-size:13px;">' + r.message + '</span><br/><br/><a href="/cgi-bin/luci/admin/services/clawpanel"><button class="cp-btn cp-btn-default">🔄 返回管理页面</button></a></div>';
+			} else {
+				result.innerHTML = '<div style="border:1px solid #f5c6cb;background:#ffeef0;padding:12px 16px;border-radius:6px;"><strong style="color:#cf222e">❌ 卸载失败:</strong> ' + (r.message || '未知错误') + '</div>';
+				btn.disabled = false;
+				btn.textContent = '🗑 确定卸载';
+			}
+		} catch(e) {
+			result.style.display = 'block';
+			result.innerHTML = '<div style="border:1px solid #f5c6cb;background:#ffeef0;padding:12px 16px;border-radius:6px;"><strong style="color:#cf222e">❌ 请求失败</strong></div>';
+			btn.disabled = false;
+			btn.textContent = '🗑 确定卸载';
+		}
+	});
+}
+
+// 加载当前安装路径
+(function() {
+	var x = new XHR();
+	x.get(BASE + '/mounts', null, function(xr) {
+		try {
+			var r = JSON.parse(xr.responseText);
+			document.getElementById('cp-path-display').textContent = (r.current_install_path or '/mnt/xxx') + '/clawpanel';
+		} catch(e) { }
+	});
+})();
+</script>

@@ -1,298 +1,125 @@
-<%
-local require = require
-local pcall = pcall
-local pairs = pairs
-local ipairs = ipairs
-local type = type
-local tostring = tostring
-local table = table
-local string = string
-local math = math
-local os = os
+<%#
+basic.htm — ClawPanel 基本设置页面
+所有 UI 在此模板中，LUA 只做数据准备
 -%>
 
-{#
- # basic.htm — ClawPanel 基本设置页面
- # 所有 UI 逻辑在这里，Lua 只做数据准备
- #}
-
 <style>
-.cp-btn { display:inline-block;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:none;margin:2px; }
-.cp-btn-apply { background:#4a90d9;color:#fff; }
-.cp-btn-action { background:#6c757d;color:#fff; }
-.cp-btn-remove { background:#cf222e;color:#fff; }
-.cp-btn:hover { opacity:0.85; }
-.cp-dialog { display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;align-items:center;justify-content:center; }
-.cp-dialog-box { background:#fff;border-radius:12px;padding:24px;max-width:520px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,0.2); }
-.cp-log { background:#1a1b26;color:#a9b1d6;padding:14px 16px;border-radius:6px;font-size:12px;line-height:1.6;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border:1px solid #2d333b;margin:0; }
-.cp-badge { display:inline-block;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600; }
-.cp-badge-running { background:#e6f7e9;color:#1a7f37; }
-.cp-badge-stopped { background:#ffeef0;color:#cf222e; }
-.cp-badge-unknown { background:#fff8c5;color:#9a6700; }
-.cp-badge-disabled { background:#f0f0f0;color:#656d76; }
-.cp-panel { border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;margin-bottom:20px; }
-.cp-panel-title { background:linear-gradient(135deg,#4a90d9,#357abd);color:#fff;padding:10px 16px;font-size:14px;font-weight:600; }
-.cp-panel table { width:100%;border-collapse:collapse; }
-.cp-panel td { padding:8px 16px;border-bottom:1px solid #f2f2f2;font-size:13px; }
-.cp-panel tr:last-child td { border-bottom:none; }
-.cp-panel td:first-child { width:120px;color:#888;white-space:nowrap; }
+.cp-btn{display:inline-block;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:none;margin:2px;}
+.cp-btn-apply{background:#4a90d9;color:#fff;}
+.cp-btn-action{background:#6c757d;color:#fff;}
+.cp-btn-remove{background:#cf222e;color:#fff;}
+.cp-btn:hover{opacity:0.85;}
+.cp-panel{border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.cp-panel-title{background:linear-gradient(135deg,#4a90d9,#357abd);color:#fff;padding:10px 16px;font-size:14px;font-weight:600;}
+.cp-panel table{width:100%;border-collapse:collapse;}
+.cp-panel td{padding:8px 16px;border-bottom:1px solid #f2f2f2;font-size:13px;}
+.cp-panel tr:last-child td{border-bottom:none;}
+.cp-panel td:first-child{width:120px;color:#888;white-space:nowrap;}
+.cp-badge{display:inline-block;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600;}
+.cp-badge-running{background:#e6f7e9;color:#1a7f37;}
+.cp-badge-stopped{background:#ffeef0;color:#cf222e;}
+.cp-badge-unknown{background:#fff8c5;color:#9a6700;}
+.cp-badge-disabled{background:#f0f0f0;color:#656d76;}
 </style>
 
 <!-- 状态面板 -->
 <div class="cp-panel">
-	<div class="cp-panel-title" id="cp-pt">🐙 ClawPanel 服务状态</div>
-	<div class="cp-panel-body">
-	<table>
-	<tr><td>运行状态</td><td id="cp-st"><span class="cp-badge cp-badge-unknown">加载中...</span></td></tr>
-	<tr><td>面板服务</td><td id="cp-panel">-</td></tr>
-	<tr><td>进程 PID</td><td id="cp-pid">-</td></tr>
-	<tr><td>内存占用</td><td id="cp-mem">-</td></tr>
-	<tr><td>运行时间</td><td id="cp-up">-</td></tr>
-	<tr><td>版本</td><td id="cp-ver">-</td></tr>
-	<tr><td>安装路径</td><td id="cp-path">-</td></tr>
-	<tr><td>剩余空间</td><td id="cp-disk">-</td></tr>
-	</table>
-	</div>
+<div class="cp-panel-title">🐙 ClawPanel 服务状态</div>
+<table>
+<tr><td>运行状态</td><td id="cp-st"><span class="cp-badge cp-badge-unknown">加载中...</span></td></tr>
+<tr><td>面板服务</td><td id="cp-sv">-</td></tr>
+<tr><td>进程 PID</td><td id="cp-pid">-</td></tr>
+<tr><td>内存占用</td><td id="cp-mem">-</td></tr>
+<tr><td>运行时间</td><td id="cp-up">-</td></tr>
+<tr><td>版本</td><td id="cp-ver">-</td></tr>
+<tr><td>安装路径</td><td id="cp-path">-</td></tr>
+<tr><td>剩余空间</td><td id="cp-disk">-</td></tr>
+</table>
 </div>
 
 <!-- 操作按钮 -->
 <div style="margin-bottom:14px;">
-	<button class="cp-btn cp-btn-apply" onclick="cpShowSetup()">📦 安装/重装</button>
-	<button class="cp-btn cp-btn-action" onclick="cpSvc('restart')">🔄 重启</button>
-	<button class="cp-btn cp-btn-action" onclick="cpSvc('stop')">⏹ 停止</button>
-	<button class="cp-btn cp-btn-action" onclick="cpSvc('start')">▶ 启动</button>
-	<button class="cp-btn cp-btn-action" onclick="cpCheck()">🔍 检测升级</button>
-	<button class="cp-btn cp-btn-remove" onclick="cpUninstall()">🗑 卸载</button>
-</div>
-<div id="cp-action-result" style="margin-bottom:14px;font-size:13px;"></div>
-
-<!-- 安装对话框 -->
-<div class="cp-dialog" id="cp-setup-dialog">
-<div class="cp-dialog-box">
-<h3 style="margin:0 0 16px">📦 安装 ClawPanel</h3>
-
-<div style="margin-bottom:14px;">
-<label style="display:flex;align-items:flex-start;gap:8px;padding:12px;border:2px solid #4a90d9;border-radius:8px;background:#f0f7ff;cursor:pointer;margin-bottom:8px;">
-<input type="radio" name="ver" value="latest" checked style="margin-top:2px;">
-<div><strong>🆕 最新版 (推荐)</strong><div style="font-size:12px;color:#666;margin-top:2px;">自动获取 GitHub 最新版本</div></div>
-</label>
-<label style="display:flex;align-items:flex-start;gap:8px;padding:12px;border:2px solid #e0e0e0;border-radius:8px;cursor:pointer;">
-<input type="radio" name="ver" value="custom" style="margin-top:2px;">
-<div><strong>🔢 指定版本</strong>
-<div style="margin-top:4px;"><input type="text" id="cp-ver-custom" placeholder="如: 5.3.3" style="padding:6px 10px;border:1px solid #d0d7de;border-radius:4px;width:100%;font-size:13px;"></div>
-</div>
-</label>
+<a href="/cgi-bin/luci/admin/services/clawpanel/install"><button class="cp-btn cp-btn-apply">📦 安装/重装</button></a>
+<button class="cp-btn cp-btn-action" id="btn-restart">🔄 重启</button>
+<button class="cp-btn cp-btn-action" id="btn-stop">⏹ 停止</button>
+<button class="cp-btn cp-btn-action" id="btn-start">▶ 启动</button>
+<button class="cp-btn cp-btn-action" id="btn-check">🔍 检测升级</button>
+<a href="/cgi-bin/luci/admin/services/clawpanel/uninstall_page"><button class="cp-btn cp-btn-remove">🗑 卸载</button></a>
 </div>
 
-<div style="border-top:1px solid #eee;padding-top:14px;">
-<div style="font-weight:600;font-size:13px;margin-bottom:8px;">📂 安装路径 <span style="color:#cf222e">（必须选择外置存储）</span></div>
-<div id="cp-mount-list" style="margin-bottom:8px;"><em style="font-size:12px;color:#888;">⏳ 正在检测存储...</em></div>
-<div style="margin-top:6px;">
-<div style="font-size:12px;color:#666;margin-bottom:4px;">📝 自定义路径:</div>
-<input type="text" id="cp-path-input" placeholder="/mnt/sda1" style="width:100%;padding:8px 12px;border:1px solid #d0d7de;border-radius:6px;font-size:13px;">
-</div>
-<div id="cp-path-warn" style="font-size:11px;color:#cf222e;margin-top:6px;display:none;"></div>
-</div>
+<div id="cp-result" style="margin-bottom:14px;font-size:13px;"></div>
 
-<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
-<button class="cp-btn cp-btn-action" onclick="cpCloseSetup()">取消</button>
-<button class="cp-btn cp-btn-apply" onclick="cpConfirmSetup()">开始安装</button>
-</div>
-</div>
-</div>
-
-<!-- 安装日志 -->
-<div id="cp-log-panel" style="display:none;">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-<span style="font-weight:600;font-size:14px;">📋 安装日志</span>
-<span id="cp-log-status" style="font-size:12px;color:#999;"></span>
-</div>
-<pre class="cp-log" id="cp-log-content"></pre>
-<div id="cp-log-result" style="margin-top:10px;display:none;"></div>
+<!-- 使用指南 -->
+<div style="border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;line-height:1.8;font-size:13px;">
+<strong>📖 使用指南</strong><br/>
+<span style="color:#555">
+首次使用：点击上方 <b>「安装/重装」</b> 按钮进入安装页面<br/>
+安装完成后访问 <b>http://路由器IP:19527</b> 进入 ClawPanel 管理面板<br/>
+⚠️ 必须选择外置存储（USB/SATA 挂载点），禁止安装到系统分区
+</span>
 </div>
 
 <script>
 var BASE = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>';
 
-function cpSvc(action) {
-	var el = document.getElementById('cp-action-result');
-	el.innerHTML = '<span style="color:#999">⏳ 执行中...</span>';
-	new XHR().get(BASE + '/service_ctl?action=' + action, null, function(x) {
-		try { var r = JSON.parse(x.responseText); }
-		catch(e) { r = {}; }
-		el.innerHTML = (r.status == 'ok')
-			? '<span style="color:green">✅ 已提交</span>'
-			: '<span style="color:red">❌ ' + (r.message || '失败') + '</span>';
+function svc(action, btn) {
+	var el = document.getElementById('cp-result');
+	el.innerHTML = '<span style="color:#999">⏳ 正在执行...</span>';
+	var x = new XHR();
+	x.get(BASE + '/service_ctl?action=' + action, null, function(x) {
+		try {
+			var r = JSON.parse(x.responseText);
+			el.innerHTML = r.status == 'ok'
+				? '<span style="color:green">✅ ' + action + ' 已提交，页面将刷新...</span>'
+				: '<span style="color:red">❌ ' + (r.message || '失败') + '</span>';
+		} catch(e) {
+			el.innerHTML = '<span style="color:red">❌ 请求失败</span>';
+		}
 	});
-	setTimeout(function() { location.reload(); }, 2000);
+	setTimeout(function() { location.reload(); }, 2500);
 }
 
-function cpCheck() {
-	var el = document.getElementById('cp-action-result');
+document.getElementById('btn-restart').onclick = function() { svc('restart', this); };
+document.getElementById('btn-stop').onclick = function() { svc('stop', this); };
+document.getElementById('btn-start').onclick = function() { svc('start', this); };
+
+document.getElementById('btn-check').onclick = function() {
+	var el = document.getElementById('cp-result');
 	el.innerHTML = '<span style="color:#999">⏳ 检测中...</span>';
-	new XHR().get(BASE + '/check_update', null, function(x) {
+	var x = new XHR();
+	x.get(BASE + '/check_update', null, function(x) {
 		try {
 			var r = JSON.parse(x.responseText);
 			if (r.plugin_has_update) {
 				el.innerHTML = '<span style="color:#e36209">🔌 v' + r.plugin_current + ' → v' + r.plugin_latest + ' (有新版本)</span>';
 			} else if (r.plugin_current) {
-				el.innerHTML = '<span style="color:#1a7f37">✅ 已是最新: v' + r.plugin_current + '</span>';
+				el.innerHTML = '<span style="color:#1a7f37">✅ 已是最快版本: v' + r.plugin_current + '</span>';
 			} else {
 				el.innerHTML = '<span style="color:#888">无法获取版本</span>';
 			}
-		} catch(e) { el.innerHTML = '<span style="color:red">检测失败</span>'; }
-	});
-}
-
-function cpUninstall() {
-	if (!confirm('确定卸载 ClawPanel？所有数据将被删除！')) return;
-	var el = document.getElementById('cp-action-result');
-	el.innerHTML = '<span style="color:#999">正在清理...</span>';
-	new XHR().get(BASE + '/uninstall', null, function(x) {
-		el.innerHTML = '<span style="color:green">✅ 卸载完成</span>';
-		setTimeout(function() { location.reload(); }, 2000);
-	});
-}
-
-function cpShowSetup() {
-	document.getElementById('cp-setup-dialog').style.display = 'flex';
-	cpLoadMounts();
-}
-function cpCloseSetup() {
-	document.getElementById('cp-setup-dialog').style.display = 'none';
-}
-
-function cpLoadMounts() {
-	var el = document.getElementById('cp-mount-list');
-	el.innerHTML = '<em style="font-size:12px;color:#888">⏳ 正在检测存储...</em>';
-	new XHR().get(BASE + '/mounts', null, function(x) {
-		try {
-			var r = JSON.parse(x.responseText);
-			if (!r.mounts || r.mounts.length === 0) {
-				el.innerHTML = '<div style="color:#e36209;font-size:12px;">⚠️ 未检测到外置存储，请先在「系统→挂载点」中挂载 USB 硬盘</div>';
-				return;
-			}
-			var h = '';
-			r.mounts.forEach(function(m, i) {
-				var bg = i === 0 ? '#f0f7ff' : '#fff';
-				var bdr = i === 0 ? '#4a90d9' : '#e0e0e0';
-				var ac = m.avail_mb >= 500 ? '#1a7f37' : '#e36209';
-				h += '<label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:2px solid ' + bdr + ';border-radius:8px;background:' + bg + ';margin-bottom:8px;cursor:pointer;">';
-				h += '<input type="radio" name="mount" value="' + m.mount + '" ' + (i===0?'checked':'') + ' onclick="cpSelMount(\'' + m.mount + '\')">';
-				h += '<div><strong>' + m.mount + '</strong>' + (i===0?' <span style="background:#1a7f37;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">推荐</span>':'');
-				h += '<div style="font-size:11px;color:#666;margin-top:2px;">可用: <span style="color:' + ac + ';font-weight:600;">' + m.size + '</span> | ' + m.fs + '</div></div>';
-				h += '</label>';
-			});
-			el.innerHTML = h;
-			if (r.mounts.length > 0) {
-				document.getElementById('cp-path-input').value = r.mounts[0].mount;
-			}
 		} catch(e) {
-			el.innerHTML = '<div style="color:#cf222e;font-size:12px;">⚠️ 检测失败</div>';
+			el.innerHTML = '<span style="color:red">检测失败</span>';
 		}
 	});
-}
+};
 
-function cpSelMount(p) {
-	document.getElementById('cp-path-input').value = p;
-}
-
-function cpConfirmSetup() {
-	var path = document.getElementById('cp-path-input').value.trim();
-	if (!path) { alert('请选择或输入安装路径'); return; }
-	var dangerous = ['/overlay','/rom','/boot','/proc','/sys','/dev','/opt','/tmp','/var','/etc','/root','/usr','/bin','/sbin','/lib','/'];
-	for (var i = 0; i < dangerous.length; i++) {
-		if (path === dangerous[i] || path.indexOf(dangerous[i] + '/') === 0) {
-			alert('错误：禁止安装到系统分区！请选择外置存储挂载点。');
-			return;
-		}
-	}
-	var choice = 'latest';
-	var radios = document.getElementsByName('ver');
-	for (var i = 0; i < radios.length; i++) { if (radios[i].checked) { choice = radios[i].value; break; } }
-	var version = '';
-	if (choice === 'custom') { version = document.getElementById('cp-ver-custom').value.trim(); }
-
-	cpCloseSetup();
-	var logPanel = document.getElementById('cp-log-panel');
-	var logEl = document.getElementById('cp-log-content');
-	var statusEl = document.getElementById('cp-log-status');
-	var resultEl = document.getElementById('cp-log-result');
-	logPanel.style.display = 'block';
-	resultEl.style.display = 'none';
-	logEl.textContent = '';
-	statusEl.innerHTML = '<span style="color:#7aa2f7">⏳ 系统检测中...</span>';
-
-	var checkUrl = BASE + '/check_system?install_path=' + encodeURIComponent(path);
-	new XHR().get(checkUrl, null, function(x) {
-		try {
-			var r = JSON.parse(x.responseText);
-			var log = '════════════════════════════════\n';
-			log += '🔍 安装路径检查\n';
-			log += '════════════════════════════════\n';
-			log += '安装路径: ' + path + '\n';
-			log += '内存: ' + r.memory_mb + ' MB (需≥256MB) — ' + (r.memory_ok ? '✅' : '❌') + '\n';
-			log += '磁盘: ' + r.disk_mb + ' MB 可用 (需≥500MB) — ' + (r.disk_ok ? '✅' : '❌') + '\n\n';
-			logEl.textContent = log;
-			if (!r.pass) {
-				statusEl.innerHTML = '<span style="color:#cf222e">❌ 不满足条件</span>';
-				logEl.textContent += '❌ 系统不满足安装条件\n';
-				return;
-			}
-			logEl.textContent += '✅ 检测通过，开始安装...\n\n';
-			statusEl.innerHTML = '<span style="color:#7aa2f7">⏳ 安装中...</span>';
-			var vp = version ? '&version=' + encodeURIComponent(version) : '';
-			var setupUrl = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path) + vp;
-			new XHR().get(setupUrl, null, function() { cpPollLog(); });
-		} catch(e) { statusEl.innerHTML = '<span style="color:#cf222e">检测失败</span>'; }
-	});
-}
-
-var _pollTimer = null;
-function cpPollLog() {
-	if (_pollTimer) clearInterval(_pollTimer);
-	_pollTimer = setInterval(function() {
-		new XHR().get(BASE + '/setup_log', null, function(x) {
-			try {
-				var r = JSON.parse(x.responseText);
-				var logEl = document.getElementById('cp-log-content');
-				var statusEl = document.getElementById('cp-log-status');
-				if (r.log) { logEl.textContent = r.log; logEl.scrollTop = logEl.scrollHeight; }
-				if (r.state === 'running') {
-					statusEl.innerHTML = '<span style="color:#7aa2f7">⏳ 安装进行中...</span>';
-				} else if (r.state === 'success') {
-					clearInterval(_pollTimer); _pollTimer = null;
-					statusEl.innerHTML = '<span style="color:#1a7f37">✅ 安装完成</span>';
-					var resultEl = document.getElementById('cp-log-result');
-					resultEl.style.display = 'block';
-					resultEl.innerHTML = '<div style="border:1px solid #c6e9c9;background:#e6f7e9;padding:12px 16px;border-radius:6px;"><strong style="color:#1a7f37">🎉 安装成功！</strong><br/><span style="color:#555">请刷新页面，访问 <b>http://IP:19527</b> 开始使用。</span><br/><button class="cp-btn cp-btn-apply" onclick="location.reload()" style="margin-top:8px">🔄 刷新页面</button></div>';
-				} else if (r.state === 'failed') {
-					clearInterval(_pollTimer); _pollTimer = null;
-					statusEl.innerHTML = '<span style="color:#cf222e">❌ 安装失败</span>';
-				}
-			} catch(e) { }
-		});
-	}, 2000);
-}
-
-// 加载时自动刷新状态
 (function() {
-	var url = BASE + '/status_api';
-	function loadStatus() {
-		new XHR().get(url, null, function(x) {
+	function load() {
+		var x = new XHR();
+		x.get(BASE + '/status_api', null, function(x) {
 			try {
 				var d = JSON.parse(x.responseText);
-				var stEl = document.getElementById('cp-st');
+				var st = document.getElementById('cp-st');
 				if (d.enabled !== '1') {
-					stEl.innerHTML = '<span class="cp-badge cp-badge-disabled">已禁用</span>';
+					st.innerHTML = '<span class="cp-badge cp-badge-disabled">已禁用</span>';
 				} else if (d.panel_running) {
-					stEl.innerHTML = '<span class="cp-badge cp-badge-running">运行中</span>';
+					st.innerHTML = '<span class="cp-badge cp-badge-running">运行中</span>';
 				} else if (d.panel_starting) {
-					stEl.innerHTML = '<span class="cp-badge cp-badge-unknown">⏳ 启动中...</span>';
+					st.innerHTML = '<span class="cp-badge cp-badge-unknown">⏳ 启动中...</span>';
 				} else {
-					stEl.innerHTML = '<span class="cp-badge cp-badge-stopped">已停止</span>';
+					st.innerHTML = '<span class="cp-badge cp-badge-stopped">已停止</span>';
 				}
-				document.getElementById('cp-panel').textContent = d.panel_running
+				document.getElementById('cp-sv').textContent = d.panel_running
 					? ('监听 :' + d.port)
 					: (d.panel_starting ? '初始化中...' : '未监听');
 				document.getElementById('cp-pid').textContent = d.pid || '-';
@@ -308,16 +135,7 @@ function cpPollLog() {
 			}
 		});
 	}
-	loadStatus();
-	setInterval(loadStatus, 5000);
+	load();
+	setInterval(load, 5000);
 })();
 </script>
-
-<div style="border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;margin-top:12px;line-height:1.8;font-size:13px;">
-<strong>📖 使用指南</strong><br/>
-<span style="color:#555">
-首次使用：点击上方 <b>「安装/重装」</b> 选择外置存储并安装<br/>
-安装完成后访问 <b>http://路由器IP:19526</b> 进入 ClawPanel<br/>
-⚠️ 必须选择外置存储（USB/SATA 挂载点），禁止安装到系统分区
-</span>
-</div>
