@@ -1,68 +1,72 @@
 -- luci-app-clawpanel — LuCI Controller
+-- 全部使用 io.popen() 执行 shell 命令，不依赖 luci.sys
 module("luci.controller.clawpanel", package.seeall)
 
-function index()
-	-- 主入口: 服务 → ClawPanel
-	local page = entry({"admin", "services", "clawpanel"},
-		alias("admin", "services", "clawpanel", "basic"),
-		_("ClawPanel"), 85)
-	page.dependent = false
+-- 执行 shell 命令并返回 stdout
+local function sh(cmd)
+	local f = io.popen(cmd .. " 2>/dev/null")
+	if not f then return "" end
+	local out = f:read("*a")
+	f:close()
+	return out or ""
+end
 
-	-- 基本设置
+-- 去掉字符串首尾空白
+local function trim(s)
+	return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+function index()
+	entry({"admin", "services", "clawpanel"},
+		alias("admin", "services", "clawpanel", "basic"),
+		_("ClawPanel"), 85).dependent = false
+
 	entry({"admin", "services", "clawpanel", "basic"},
 		cbi("clawpanel/basic"), _("状态与设置"), 10).leaf = true
 
-	-- 状态 API
 	entry({"admin", "services", "clawpanel", "status_api"},
 		call("action_status"), nil).leaf = true
 
-	-- 服务控制 API
 	entry({"admin", "services", "clawpanel", "service_ctl"},
 		call("action_service_ctl"), nil).leaf = true
 
-	-- 安装日志 API
 	entry({"admin", "services", "clawpanel", "setup_log"},
 		call("action_setup_log"), nil).leaf = true
 
-	-- 版本检查 API
 	entry({"admin", "services", "clawpanel", "check_update"},
 		call("action_check_update"), nil).leaf = true
 
-	-- 卸载 API
 	entry({"admin", "services", "clawpanel", "uninstall"},
 		call("action_uninstall"), nil).leaf = true
 
-	-- 系统检测 API
 	entry({"admin", "services", "clawpanel", "check_system"},
 		call("action_check_system"), nil).leaf = true
 
-	-- 可用挂载点查询 API
 	entry({"admin", "services", "clawpanel", "mounts"},
 		call("action_mounts"), nil).leaf = true
 end
 
 -- ═══════════════════════════════════════════
--- 状态查询 API: 返回 JSON
+-- 状态查询 API
 -- ═══════════════════════════════════════════
 function action_status()
 	local http = require "luci.http"
-	local sys = require "luci.sys"
 	local uci = require "luci.model.uci".cursor()
 
 	local port = uci:get("clawpanel", "main", "port") or "19527"
 	local enabled = uci:get("clawpanel", "main", "enabled") or "0"
-	local install_path = uci:get("clawpanel", "main", "install_path") or "/opt"
+	local install_path = uci:get("clawpanel", "main", "install_path") or ""
 	local edition = uci:get("clawpanel", "main", "edition") or "pro"
-	install_path = install_path .. "/clawpanel"
-
-	-- 端口值安全校验
-	if not port:match("^%d+$") then port = "19527" end
+	local cp_bin = ""
+	if install_path and install_path ~= "" then
+		cp_bin = install_path .. "/clawpanel/clawpanel"
+	end
 
 	local result = {
 		enabled = enabled,
 		port = port,
 		edition = edition,
-		install_path = install_path,
+		install_path = install_path or "",
 		panel_running = false,
 		panel_starting = false,
 		pid = "",
@@ -71,98 +75,68 @@ function action_status()
 		panel_version = "",
 		openclaw_version = "",
 		disk_free = "",
-		nodejs_version = "",
 	}
 
 	-- 插件版本
-	local pvf = io.open("/usr/share/clawpanel/VERSION", "r")
-	if pvf then
-		result.plugin_version = pvf:read("*a"):gsub("%s+", "")
-		pvf:close()
+	local f = io.open("/usr/share/clawpanel/VERSION", "r")
+	if f then
+		result.plugin_version = trim(f:read("*a"))
+		f:close()
 	end
 
-	-- ClawPanel 版本（二进制 --version）
-	local cp_bin = install_path .. "/clawpanel"
-	local f = io.open(cp_bin, "r")
-	if f then
-		f:close()
-		local ver = sys.exec(cp_bin .. " --version 2>/dev/null"):gsub("%s+", "")
+	-- ClawPanel 版本
+	if cp_bin ~= "" then
+		local ver = trim(sh(cp_bin .. " --version"))
 		result.panel_version = ver
 	end
 
-	-- OpenClaw 版本（从工作区读取）
-	local openclaw_ver_file = install_path .. "/data/.openclaw/VERSION"
-	local ovf = io.open(openclaw_ver_file, "r")
-	if ovf then
-		result.openclaw_version = ovf:read("*a"):gsub("%s+", "")
-		ovf:close()
-	end
-
 	-- 端口检测
-	local gw_check
-	if command -v ss >/dev/null 2>&1; then
-		gw_check = sys.exec("ss -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || echo 0"):gsub("%s+", "")
-	else
-		gw_check = sys.exec("netstat -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || echo 0"):gsub("%s+", "")
-	end
-	result.panel_running = (tonumber(gw_check) or 0) > 0
+	local cnt = trim(sh("ss -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || netstat -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || echo 0"))
+	result.panel_running = (tonumber(cnt) or 0) > 0
 
-	-- 正在启动中（端口未监听但进程存在）
+	-- 正在启动中
 	if not result.panel_running and enabled == "1" then
-		local procd_pid = sys.exec("pgrep -f 'clawpanel' 2>/dev/null | head -1"):gsub("%s+", "")
-		if procd_pid ~= "" then
+		local pid = trim(sh("pgrep -f 'clawpanel' 2>/dev/null | head -1"))
+		if pid and pid ~= "" then
 			result.panel_starting = true
 		end
 	end
 
 	-- PID、内存、运行时长
-	if result.panel_running then
-		local pid_cmd
-		if command -v ss >/dev/null 2>&1; then
-			pid_cmd = "ss -tulnp 2>/dev/null | awk '/:" .. port .. " /{split($NF,a,\"/\");print a[1];exit}'"
-		else
-			pid_cmd = "netstat -tulnp 2>/dev/null | grep ':" .. port .. " ' | sed -n 's|.* \\([0-9]*\\)/.*|\\1|p' | head -1"
+	if result.panel_running and port then
+		local pid = trim(sh("ss -tulnp 2>/dev/null | grep ':" .. port .. " ' | head -1 | sed 's/.*pid=//' | sed 's/.*\///' | awk '{print $1}'"))
+		if not pid or pid == "" then
+			pid = trim(sh("netstat -tulnp 2>/dev/null | grep ':" .. port .. " ' | head -1 | sed -n 's|.* \\([0-9]*\\)/.*|\\1|p'"))
 		end
-		local pid = sys.exec(pid_cmd):gsub("%s+", "")
 		if pid and pid ~= "" then
 			result.pid = pid
-			local rss = sys.exec("awk '/VmRSS/{print $2}' /proc/" .. pid .. "/status 2>/dev/null"):gsub("%s+", "")
+			local rss = trim(sh("awk '/VmRSS/{print $2}' /proc/" .. pid .. "/status 2>/dev/null"))
 			result.memory_kb = tonumber(rss) or 0
-			local stat_time = sys.exec("stat -c %Y /proc/" .. pid .. " 2>/dev/null"):gsub("%s+", "")
-			local start_ts = tonumber(stat_time) or 0
-			if start_ts > 0 then
-				local uptime_s = os.time() - start_ts
-				local hours = math.floor(uptime_s / 3600)
-				local mins = math.floor((uptime_s % 3600) / 60)
-				local secs = uptime_s % 60
-				if hours > 0 then
-					result.uptime = string.format("%dh %dm %ds", hours, mins, secs)
-				elseif mins > 0 then
-					result.uptime = string.format("%dm %ds", mins, secs)
+			local start_ts = trim(sh("stat -c %Y /proc/" .. pid .. " 2>/dev/null"))
+			local ts = tonumber(start_ts) or 0
+			if ts > 0 then
+				local up = os.time() - ts
+				local h = math.floor(up / 3600)
+				local m = math.floor((up % 3600) / 60)
+				local s = up % 60
+				if h > 0 then
+					result.uptime = string.format("%dh %dm %ds", h, m, s)
+				elseif m > 0 then
+					result.uptime = string.format("%dm %ds", m, s)
 				else
-					result.uptime = string.format("%ds", secs)
+					result.uptime = s .. "s"
 				end
 			end
 		end
 	end
 
 	-- 磁盘剩余空间
-	local parent_dir = install_path:match("^(.*)/[^/]*$") or "/"
-	local df_out = sys.exec("df -h " .. parent_dir .. " 2>/dev/null | tail -1 | awk '{print $4}'"):gsub("%s+", "")
-	if df_out and df_out ~= "" then
-		result.disk_free = df_out
-	end
-
-	-- OpenClaw 版本
-	local oc_ver = sys.exec("cat " .. install_path .. "/data/.openclaw/VERSION 2>/dev/null"):gsub("%s+", "")
-	if oc_ver ~= "" then
-		result.openclaw_version = oc_ver
-	end
-
-	-- Node.js 版本（如果 OpenClaw Lite 内嵌了 Node.js）
-	local node_bin = install_path .. "/runtime/node/bin/node"
-	if io.open(node_bin, "r") then
-		result.nodejs_version = sys.exec(node_bin .. " --version 2>/dev/null"):gsub("%s+", "")
+	if install_path and install_path ~= "" then
+		local parent = install_path:match("^(.*)/[^/]+$") or "/"
+		local disk = trim(sh("df -h " .. parent .. " 2>/dev/null | tail -1 | awk '{print $4}'"))
+		if disk and disk ~= "" then
+			result.disk_free = disk
+		end
 	end
 
 	http.prepare_content("application/json")
@@ -170,38 +144,33 @@ function action_status()
 end
 
 -- ═══════════════════════════════════════════
--- 服务控制 API: start/stop/restart/setup
+-- 服务控制 API
 -- ═══════════════════════════════════════════
 function action_service_ctl()
 	local http = require "luci.http"
-	local sys = require "luci.sys"
-
 	local action = http.formvalue("action") or ""
 
 	if action == "start" then
-		sys.exec("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
+		sh("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
 	elseif action == "stop" then
-		sys.exec("/etc/init.d/clawpanel stop >/dev/null 2>&1")
-		sys.exec("sleep 2")
+		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
+		sh("sleep 2")
 	elseif action == "restart" then
-		sys.exec("/etc/init.d/clawpanel stop >/dev/null 2>&1")
-		sys.exec("sleep 2")
-		sys.exec("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
+		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
+		sh("sleep 2")
+		sh("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
 	elseif action == "enable" then
-		sys.exec("/etc/init.d/clawpanel enable 2>/dev/null")
+		sh("/etc/init.d/clawpanel enable 2>/dev/null")
 	elseif action == "disable" then
-		sys.exec("/etc/init.d/clawpanel disable 2>/dev/null")
+		sh("/etc/init.d/clawpanel disable 2>/dev/null")
 	elseif action == "setup" then
-		-- 后台安装
-		sys.exec("rm -f /tmp/clawpanel-setup.log /tmp/clawpanel-setup.pid /tmp/clawpanel-setup.exit")
+		sh("rm -f /tmp/clawpanel-setup.log /tmp/clawpanel-setup.pid /tmp/clawpanel-setup.exit")
 		local version = http.formvalue("version") or ""
-		local install_path = http.formvalue("install_path") or "/opt"
+		local install_path = http.formvalue("install_path") or ""
 		install_path = install_path:gsub("[`$;&|<>]", "")
 		install_path = install_path:gsub("/+$", "")
-		if install_path == "" then install_path = "/opt" end
 
-		-- 保存安装路径到 UCI
-		sys.exec("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
+		sh("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
 
 		local env_prefix = ""
 		if version ~= "" and version ~= "latest" then
@@ -210,7 +179,7 @@ function action_service_ctl()
 			end
 		end
 
-		sys.exec("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' /usr/bin/clawpanel-env setup > /tmp/clawpanel-setup.log 2>&1; RC=$?; echo $RC > /tmp/clawpanel-setup.exit; if [ $RC -eq 0 ]; then uci set clawpanel.main.enabled=1; uci commit clawpanel; /etc/init.d/clawpanel enable 2>/dev/null; fi ) & echo $! > /tmp/clawpanel-setup.pid")
+		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' /usr/bin/clawpanel-env setup > /tmp/clawpanel-setup.log 2>&1; RC=$?; echo $RC > /tmp/clawpanel-setup.exit; if [ $RC -eq 0 ]; then uci set clawpanel.main.enabled=1; uci commit clawpanel; /etc/init.d/clawpanel enable 2>/dev/null; fi ) & echo $! > /tmp/clawpanel-setup.pid")
 
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "安装已启动，请查看安装日志..." })
@@ -230,7 +199,6 @@ end
 -- ═══════════════════════════════════════════
 function action_setup_log()
 	local http = require "luci.http"
-	local sys = require "luci.sys"
 
 	local log = ""
 	local f = io.open("/tmp/clawpanel-setup.log", "r")
@@ -240,22 +208,22 @@ function action_setup_log()
 	end
 
 	local running = false
-	local pid_file = io.open("/tmp/clawpanel-setup.pid", "r")
-	if pid_file then
-		local pid = pid_file:read("*a"):gsub("%s+", "")
-		pid_file:close()
-		if pid ~= "" then
-			local check = sys.exec("kill -0 " .. pid .. " 2>/dev/null && echo yes || echo no"):gsub("%s+", "")
-			running = (check == "yes")
+	local pidf = io.open("/tmp/clawpanel-setup.pid", "r")
+	if pidf then
+		local pid = trim(pidf:read("*a"))
+		pidf:close()
+		if pid and pid ~= "" then
+			local ok = trim(sh("kill -0 " .. pid .. " 2>/dev/null && echo yes || echo no"))
+			running = (ok == "yes")
 		end
 	end
 
 	local exit_code = -1
 	if not running then
-		local exit_file = io.open("/tmp/clawpanel-setup.exit", "r")
-		if exit_file then
-			local code = exit_file:read("*a"):gsub("%s+", "")
-			exit_file:close()
+		local ef = io.open("/tmp/clawpanel-setup.exit", "r")
+		if ef then
+			local code = trim(ef:read("*a"))
+			ef:close()
 			exit_code = tonumber(code) or -1
 		end
 	end
@@ -270,11 +238,7 @@ function action_setup_log()
 	end
 
 	http.prepare_content("application/json")
-	http.write_json({
-		state = state,
-		exit_code = exit_code,
-		log = log
-	})
+	http.write_json({ state = state, exit_code = exit_code, log = log })
 end
 
 -- ═══════════════════════════════════════════
@@ -282,22 +246,19 @@ end
 -- ═══════════════════════════════════════════
 function action_check_update()
 	local http = require "luci.http"
-	local sys = require "luci.sys"
 
-	-- 插件版本（当前安装的）
 	local plugin_current = ""
-	local pf = io.open("/usr/share/clawpanel/VERSION", "r")
-	if pf then
-		plugin_current = pf:read("*a"):gsub("%s+", "")
-		pf:close()
+	local f = io.open("/usr/share/clawpanel/VERSION", "r")
+	if f then
+		plugin_current = trim(f:read("*a"))
+		f:close()
 	end
 
 	local plugin_latest = ""
 	local release_notes = ""
 	local plugin_has_update = false
 
-	-- GitHub API 获取最新 release
-	local gh_json = sys.exec("curl -sf --connect-timeout 5 --max-time 10 'https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest' 2>/dev/null")
+	local gh_json = sh("curl -sf --connect-timeout 5 --max-time 10 'https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest' 2>/dev/null")
 	if gh_json and gh_json ~= "" then
 		local tag = gh_json:match('"tag_name"%s*:%s*"([^"]+)"')
 		if tag and tag ~= "" then
@@ -329,42 +290,39 @@ end
 -- ═══════════════════════════════════════════
 function action_uninstall()
 	local http = require "luci.http"
-	local sys = require "luci.sys"
 	local uci = require "luci.model.uci".cursor()
 
-	local install_path_uci = uci:get("clawpanel", "main", "install_path") or "/opt"
-	local install_path = install_path_uci .. "/clawpanel"
+	local install_path = uci:get("clawpanel", "main", "install_path") or ""
+	local cp_path = install_path
+	if cp_path ~= "" then
+		cp_path = cp_path .. "/clawpanel"
+	end
 
-	-- 停止服务
-	sys.exec("/etc/init.d/clawpanel stop >/dev/null 2>&1")
-	sys.exec("/etc/init.d/clawpanel disable 2>/dev/null")
+	sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
+	sh("/etc/init.d/clawpanel disable 2>/dev/null")
+	sh("uci set clawpanel.main.enabled=0; uci commit clawpanel 2>/dev/null")
 
-	-- 禁用
-	sys.exec("uci set clawpanel.main.enabled=0; uci commit clawpanel 2>/dev/null")
+	if cp_path ~= "" then
+		sh("rm -rf " .. cp_path)
+	end
 
-	-- 删除安装目录
-	sys.exec("rm -rf " .. install_path)
-
-	-- 清理临时文件
-	sys.exec("rm -f /tmp/clawpanel-setup.* /var/run/clawpanel.pid")
-	sys.exec("rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null")
+	sh("rm -f /tmp/clawpanel-setup.* /var/run/clawpanel.pid")
+	sh("rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null")
 
 	http.prepare_content("application/json")
 	http.write_json({
 		status = "ok",
-		message = "ClawPanel 已完全卸载。安装目录 (" .. install_path .. ") 和服务均已清除。"
+		message = "ClawPanel 已完全卸载。安装目录 (" .. (cp_path or "") .. ") 和服务均已清除。"
 	})
 end
 
 -- ═══════════════════════════════════════════
--- 系统检测 API (安装前检测硬件)
--- 要求: 内存 > 256MB, 磁盘可用空间 > 500MB
+-- 系统检测 API
 -- ═══════════════════════════════════════════
 function action_check_system()
 	local http = require "luci.http"
-	local sys = require "luci.sys"
 
-	local install_path = http.formvalue("install_path") or "/opt"
+	local install_path = http.formvalue("install_path") or ""
 	install_path = install_path:gsub("[`$;&|<>]", "")
 	install_path = install_path:gsub("/+$", "")
 	if install_path == "" then install_path = "/opt" end
@@ -388,9 +346,9 @@ function action_check_system()
 	local meminfo = io.open("/proc/meminfo", "r")
 	if meminfo then
 		for line in meminfo:lines() do
-			local mem_total = line:match("MemTotal:%s+(%d+)%s+kB")
-			if mem_total then
-				result.memory_mb = math.floor(tonumber(mem_total) / 1024)
+			local val = line:match("MemTotal:%s+(%d+)%s+kB")
+			if val then
+				result.memory_mb = math.floor(tonumber(val) / 1024)
 				break
 			end
 		end
@@ -398,29 +356,23 @@ function action_check_system()
 	end
 	result.memory_ok = result.memory_mb >= MIN_MEMORY_MB
 
-	-- 查找挂载点
-	local function find_mount_point(path)
-		if nixio.fs and nixio.fs.stat(path, "type") then
-			return path
-		end
-		while path ~= "/" and path ~= "" do
-			path = path:match("^(.*)/[^/]*$") or "/"
-			if path == "" then path = "/" end
-			if os.execute("test -d '" .. path .. "' 2>/dev/null") == 0 then
-				return path
-			end
-		end
-		return "/"
-	end
-
-	local disk_check_path = find_mount_point(install_path)
-
 	-- 获取磁盘空间
-	local df_output = sys.exec("df -m " .. disk_check_path .. " 2>/dev/null | tail -1 | awk '{print $4}'"):gsub("%s+", "")
-	if df_output and df_output ~= "" and tonumber(df_output) then
-		result.disk_mb = tonumber(df_output)
-		result.disk_path = disk_check_path
-		result.disk_free_str = sys.exec("df -h " .. disk_check_path .. " 2>/dev/null | tail -1 | awk '{print $4}'"):gsub("%s+", "")
+	local mp = install_path
+	while mp ~= "/" and mp ~= "" do
+		local test = io.open(mp, "r")
+		if test then
+			test:close()
+			break
+		end
+		mp = mp:match("^(.*)/[^/]+$") or "/"
+	end
+	if mp == "" then mp = "/" end
+
+	local df_out = trim(sh("df -m " .. mp .. " 2>/dev/null | tail -1 | awk '{print $4}'"))
+	if df_out ~= "" and tonumber(df_out) then
+		result.disk_mb = tonumber(df_out)
+		result.disk_path = mp
+		result.disk_free_str = trim(sh("df -h " .. mp .. " 2>/dev/null | tail -1 | awk '{print $4}'"))
 	end
 	result.disk_ok = result.disk_mb >= MIN_DISK_MB
 
@@ -445,24 +397,21 @@ end
 
 -- ═══════════════════════════════════════════
 -- 可用外置存储挂载点查询 API
--- 返回格式: [{mount, size, filesystem}]
 -- ═══════════════════════════════════════════
 function action_mounts()
 	local http = require "luci.http"
-	local sys = require "luci.sys"
 
-	-- 执行 df，解析外置存储挂载点
-	local output = sys.exec("df -h 2>/dev/null | awk 'NR>1'")
+	local output = sh("df -h 2>/dev/null | awk 'NR>1'")
 	local mounts = {}
 
 	for line in output:gmatch("[^\r\n]+") do
-		local fs, size, used, avail, use_pct, mp = line:match("^([%S]+)%s+([%d%.%w]+)%s+([%d%.%w]+)%s+([%d%.%w]+)%s+([%d%%]+)%s+([%S]+)$")
+		local fs, avail, mp
+		fs, avail, mp = line:match("^([%S]+)%s+[%d%.%w]+%s+[%d%.%w]+%s+([%d%.%w]+)%s+[%d%%]+%s+([%S]+)$")
 		if not fs then
-			fs, size, avail, mp = line:match("^([%S]+)%s+[%d%.%w]+%s+[%d%.%w]+%s+([%d%.%w]+)%s+[%d%%]+%s+([%S]+)$")
+			fs, avail, mp = line:match("^([%S]+)%s+[%d%.%w]+%s+[%d%.%w]+%s+([%d%.%w]+)%s+[%d%%]+%s+([%S]+)$")
 		end
 
 		if fs and mp then
-			-- 跳过系统保留挂载点
 			local skip = false
 			if mp == "/" then skip = true end
 			if mp == "/overlay" then skip = true end
@@ -475,15 +424,14 @@ function action_mounts()
 			if not skip and fs == "devpts" then skip = true end
 			if not skip and fs == "proc" then skip = true end
 			if not skip and not mp:match("^/") then skip = true end
-			if skip then
-				-- 系统挂载点，跳过
-			else
+
+			if not skip then
 				local avail_mb = 0
 				if avail then
 					local num = avail:match("([%d%.]+)")
-					if avail:match("T") then
+					if avail:match("T") and num then
 						avail_mb = tonumber(num) * 1024 * 1024
-					elseif avail:match("G") then
+					elseif avail:match("G") and num then
 						avail_mb = tonumber(num) * 1024
 					elseif num then
 						avail_mb = tonumber(num) or 0
@@ -505,10 +453,12 @@ function action_mounts()
 		return (a.avail_mb or 0) > (b.avail_mb or 0)
 	end)
 
+	local cur_path = trim(sh("uci -q get clawpanel.main.install_path || echo ''"))
+
 	http.prepare_content("application/json")
 	http.write_json({
 		status = "ok",
 		mounts = mounts,
-		current_install_path = sys.exec("uci -q get clawpanel.main.install_path || echo ''"):gsub("%s+", "")
+		current_install_path = cur_path
 	})
 end
