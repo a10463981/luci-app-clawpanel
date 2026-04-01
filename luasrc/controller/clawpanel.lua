@@ -56,7 +56,6 @@ function action_status()
 	local port = uci:get("clawpanel", "main", "port") or "19527"
 	local enabled = uci:get("clawpanel", "main", "enabled") or "0"
 	local install_path = uci:get("clawpanel", "main", "install_path") or ""
-	local openclaw_path = uci:get("clawpanel", "main", "openclaw_path") or ""
 	local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
 
 	local result = {
@@ -64,8 +63,6 @@ function action_status()
 		port = port,
 		install_path = install_path,
 		openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or "",
-		openclaw_app = uci:get("clawpanel", "main", "openclaw_app") or "",
-		openclaw_work = uci:get("clawpanel", "main", "openclaw_work") or "",
 		panel_running = false,
 		pid = "",
 		memory_kb = 0,
@@ -202,26 +199,16 @@ function action_service_ctl()
 
 		local version = http.formvalue("version") or ""
 		local install_path = http.formvalue("install_path") or ""
-		install_path = install_path:gsub("[`$;&|<>]", ""):gsub("/+$", "")
+		install_path = install_path:gsub("[^%w%-%./]", ""):gsub("/+$", "")
 
-		-- Save install path to UCI
+		-- 保存安装路径到 UCI
 		sh("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
 
-		-- Save openclaw paths to UCI (all are optional - empty uses defaults)
+		-- 保存 OpenClaw 数据目录到 UCI（留空则使用默认）
 		local openclaw_dir = http.formvalue("openclaw_dir") or ""
-		local openclaw_app = http.formvalue("openclaw_app") or ""
-		local openclaw_work = http.formvalue("openclaw_work") or ""
 		if openclaw_dir ~= "" then
 			openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", "")
 			sh("uci set clawpanel.main.openclaw_dir='" .. openclaw_dir .. "'; uci commit clawpanel 2>/dev/null")
-		end
-		if openclaw_app ~= "" then
-			openclaw_app = openclaw_app:gsub("[^%w%-%./]", "")
-			sh("uci set clawpanel.main.openclaw_app='" .. openclaw_app .. "'; uci commit clawpanel 2>/dev/null")
-		end
-		if openclaw_work ~= "" then
-			openclaw_work = openclaw_work:gsub("[^%w%-%./]", "")
-			sh("uci set clawpanel.main.openclaw_work='" .. openclaw_work .. "'; uci commit clawpanel 2>/dev/null")
 		end
 
 		local env_prefix = ""
@@ -229,8 +216,13 @@ function action_service_ctl()
 			env_prefix = "CP_VERSION=" .. version .. " "
 		end
 
-		-- Run installation in background, log to /tmp/clawpanel-setup.log
-		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' " .. env_prefix .. "CP_OPENCLAW_PATH='" .. openclaw_path .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
+		-- 将 openclaw_dir 通过环境变量传给 clawpanel-env
+		local openclaw_env = ""
+		if openclaw_dir ~= "" then
+			openclaw_env = "CP_OPENCLAW_DIR='" .. openclaw_dir .. "' "
+		end
+
+		sh("( " .. env_prefix .. openclaw_env .. "CP_BASE_PATH='" .. install_path .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
 
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Installation started, please wait..." })
@@ -327,6 +319,9 @@ function action_uninstall()
 	else
 		log("No valid install path to remove")
 	end
+
+	log("Cleaning up UCI config (keeping install_path for reference)...")
+	sh("uci set clawpanel.main.openclaw_dir=''; uci commit clawpanel 2>/dev/null")
 
 	log("Cleaning up temporary files...")
 	sh("rm -f /tmp/clawpanel-setup.* /var/run/clawpanel.pid")

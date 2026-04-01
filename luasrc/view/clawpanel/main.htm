@@ -6,11 +6,6 @@ local uci = require("luci.model.uci").cursor()
 local sys = require "luci.sys"
 local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
 local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or ""
-local openclaw_app = uci:get("clawpanel", "main", "openclaw_app") or ""
-local openclaw_work = uci:get("clawpanel", "main", "openclaw_work") or ""
-local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or ""
-local openclaw_app = uci:get("clawpanel", "main", "openclaw_app") or ""
-local openclaw_work = uci:get("clawpanel", "main", "openclaw_work") or ""
 local port = uci:get("clawpanel", "main", "port") or "19527"
 local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface lan' | grep 'ipaddr' | cut -d\"'\" -f2") or ""
 if lan_addr == "" then lan_addr = "192.168.1.1" end
@@ -21,7 +16,7 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 #cp-panel{margin:0 0 20px 0;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden}
 #cp-panel .panel-title{background:linear-gradient(135deg,#4a90d9,#357abd);color:#fff;padding:10px 16px;font-size:14px;font-weight:600}
 #cp-panel td{padding:8px 16px;border-bottom:1px solid #f2f2f2;font-size:13px}
-#cp-panel td:first-child{width:120px;color:#888;font-weight:500}
+#cp-panel td:first-child{width:130px;color:#888;font-weight:500}
 #cp-panel tr:last-child td{border-bottom:none}
 .cp-btn{padding:6px 14px;border-radius:6px;font-size:13px;color:#fff;border:none;cursor:pointer;display:inline-block}
 .cp-btn-apply{background:#4a90d9}.cp-btn-apply:hover{background:#357abd}
@@ -36,11 +31,14 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 #cp-path{margin-bottom:14px}
 #cp-path label{font-size:13px;color:#555}
 #cp-path input{width:260px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
+#cp-openclaw-dir{margin-bottom:14px}
+#cp-openclaw-dir label{font-size:13px;color:#555}
+#cp-openclaw-dir input{width:320px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
+#cp-openclaw-dir .hint{font-size:11px;color:#888;margin-left:8px}
 #cp-actions{margin-bottom:14px}
 #cp-actions .cp-btn{margin-right:8px}
 #cp-hint{border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;font-size:13px;line-height:1.8}
 #cp-hint strong{color:#1a7f37}
-
 #cp-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:99999;align-items:center;justify-content:center}
 #cp-modal.show{display:flex}
 #cp-modal .modal-box{background:#1e1e1e;border-radius:12px;padding:0;max-width:600px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.7)}
@@ -77,7 +75,7 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 <tr><td>版本</td><td id="cp-st-ver">-</td></tr>
 <tr><td>安装路径</td><td id="cp-st-path"><%=install_path%></td></tr>
 <tr><td>剩余空间</td><td id="cp-st-disk">-</td></tr>
-<tr><td>OpenClaw目录</td><td id="cp-st-openclaw-path">-</td></tr>
+<tr><td>OpenClaw目录</td><td id="cp-st-openclaw-dir">-</td></tr>
 </table>
 </div>
 
@@ -86,10 +84,10 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 <input type="text" id="f-path" value="<%=install_path%>">
 </div>
 
-<div id="cp-path2">
+<div id="cp-openclaw-dir">
 <label>OpenClaw 数据目录：</label>
-<input type="text" id="f-openclaw-path" value="<%=openclaw_path%>" style="width:320px">
-<span style="font-size:11px;color:#888;margin-left:8px">OpenClaw 及其插件数据存放位置，建议放在外置存储</span>
+<input type="text" id="f-openclaw-dir" value="<%=openclaw_dir%>" placeholder="留空则使用默认: &lt;安装路径&gt;/clawpanel/data/.openclaw">
+<span class="hint">OpenClaw 及其插件数据存放位置，建议放在外置存储</span>
 </div>
 
 <div id="cp-actions">
@@ -147,8 +145,7 @@ function updateStatus() {
         $('cp-st-ver').textContent = d.panel_version || d.installed_version || '-';
         $('cp-st-path').textContent = d.install_path || '-';
         $('cp-st-disk').textContent = d.disk_free || '-';
-        $('cp-st-openclaw-path').textContent = d.openclaw_dir || '-';
-        $('f-openclaw-dir').value = d.openclaw_dir || '';
+        $('cp-st-openclaw-dir').textContent = d.openclaw_dir || '(默认)';
     });
 }
 
@@ -159,9 +156,7 @@ function doInstall() {
     if (path === '/' || path.indexOf('/overlay') === 0 || path.indexOf('/proc') === 0 || path.indexOf('/sys') === 0 || path.indexOf('/dev') === 0 || path.indexOf('/etc') === 0) {
         alert('系统路径被禁止，请使用外置存储路径'); return;
     }
-    // openclaw paths are optional - empty uses defaults
     showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...');
-    // Fire-and-forget using Image object - no page navigation
     var img = new Image();
     var url = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
     if (openclawDir) url += '&openclaw_dir=' + encodeURIComponent(openclawDir);
@@ -184,7 +179,6 @@ function doSvc(action) {
     var titles = { restart: '重启 ClawPanel', stop: '停止 ClawPanel', start: '启动 ClawPanel' };
     var api = action === 'stop' ? '/wait_stopped' : '/wait_running';
     showModal(titles[action], '执行中...', '正在执行...');
-    // Fire-and-forget using Image object
     var img = new Image();
     img.src = BASE + '/service_ctl?action=' + action;
     var poll = setInterval(function() {
@@ -202,10 +196,8 @@ function doSvc(action) {
 function doUninstall() {
     if (!confirm('确认卸载 ClawPanel？\n这将停止服务并删除所有文件。')) return;
     showModal('正在卸载', '执行中...', '正在初始化...');
-    // Fire-and-forget using Image object
     var img = new Image();
     img.src = BASE + '/uninstall';
-    // Poll uninstall log
     var poll = setInterval(function() {
         xhr(BASE + '/uninstall_log', function(d) {
             $('cp-modal-content').innerHTML = (d.log || '等待日志...').replace(/\n/g, '<br>');

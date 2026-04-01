@@ -1,15 +1,15 @@
-#!/bin/sh
+﻿#!/bin/sh
 # clawpanel-env - ClawPanel installation script
 # Env vars:
 #   CP_BASE_PATH      - installation base path (e.g. /mnt/sda1)
 #   CP_VERSION        - version to install (e.g. pro-v5.3.3)
-#   CP_OPENCLAW_PATH  - OpenClaw data directory (e.g. /mnt/sda1/.openclaw)
+#   CP_OPENCLAW_DIR   - OpenClaw data directory (e.g. /mnt/sda1/clawpanel/data/.openclaw)
 
 set -e
 
 CP_BASE_PATH="${CP_BASE_PATH:-/mnt/sda1}"
 CP_VERSION="${CP_VERSION:-latest}"
-CP_OPENCLAW_PATH="${CP_OPENCLAW_PATH:-}"
+CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-}"
 
 # Check if running as root
 if [ "$(id -u)" != "0" ]; then
@@ -86,15 +86,16 @@ check_disk() {
 create_dirs() {
     local base="$1"
     local data_dir="${2:-${base}/clawpanel/data}"
-    
+    local openclaw_dir="${3:-${data_dir}/.openclaw}"
+
     mkdir -p "$base"
     mkdir -p "$data_dir"
-    mkdir -p "${data_dir}/.openclaw"
-    
+    mkdir -p "$openclaw_dir"
+
     echo "Directories created:"
     echo "  - $base"
     echo "  - ${data_dir}"
-    echo "  - ${data_dir}/.openclaw"
+    echo "  - ${openclaw_dir}"
 }
 
 # Download ClawPanel binary
@@ -149,16 +150,16 @@ do_setup() {
     echo "=== ClawPanel Setup ==="
     echo "Install path: $cp_install_path"
     echo "Data path: $cp_data"
-    echo "OpenClaw data path: ${CP_OPENCLAW_PATH:-not set (will use default)}"
+    echo "OpenClaw data path: ${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
     echo "Port: $cp_port"
     echo "Architecture: $CP_ARCH"
     echo "Version: $CP_VERSION"
-    
+
     # Check disk space (need ~100MB)
     check_disk "$CP_BASE_PATH" 100 || exit 1
-    
-    # Create directories
-    create_dirs "$CP_BASE_PATH" "$cp_data"
+
+    # Create directories (pass OpenClaw dir if set)
+    create_dirs "$CP_BASE_PATH" "$cp_data" "${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
     
     # Determine version
     local ver="$CP_VERSION"
@@ -182,9 +183,9 @@ do_setup() {
     echo "$actual_ver" > "${cp_install_path}/.version"
     
     # Save OpenClaw data path to file if specified
-    if [ -n "$CP_OPENCLAW_PATH" ]; then
-        echo "$CP_OPENCLAW_PATH" > "${cp_install_path}/.openclaw_path"
-        echo "OpenClaw data path saved: $CP_OPENCLAW_PATH"
+    if [ -n "$CP_OPENCLAW_DIR" ]; then
+        echo "$CP_OPENCLAW_DIR" > "${cp_install_path}/.openclaw_path"
+        echo "OpenClaw data path saved: $CP_OPENCLAW_DIR"
     fi
     
     # Setup UCI
@@ -211,3 +212,4 @@ case "${1:-setup}" in
         exit 1
         ;;
 esac
+
