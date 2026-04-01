@@ -35,6 +35,10 @@ function index()
 	-- 系统检测 API
 	entry({"admin", "services", "clawpanel", "check_system"},
 		call("action_check_system"), nil).leaf = true
+
+	-- 可用挂载点查询 API
+	entry({"admin", "services", "clawpanel", "mounts"},
+		call("action_mounts"), nil).leaf = true
 end
 
 -- ═══════════════════════════════════════════
@@ -437,4 +441,65 @@ function action_check_system()
 
 	http.prepare_content("application/json")
 	http.write_json(result)
+end
+
+-- ═══════════════════════════════════════════
+-- 可用外置存储挂载点查询 API
+-- 返回格式: [{mount, size, filesystem}]
+-- ═══════════════════════════════════════════
+function action_mounts()
+	local http = require "luci.http"
+	local sys = require "luci.sys"
+
+	-- 执行 df，解析外置存储挂载点
+	local output = sys.exec("df -h 2>/dev/null | awk 'NR>1'")
+	local mounts = {}
+
+	for line in output:gmatch("[^\r\n]+") do
+		local fs, size, used, avail, use_pct, mp = line:match("^([%S]+)%s+([%d%.%w]+)%s+([%d%.%w]+)%s+([%d%.%w]+)%s+([%d%%]+)%s+([%S]+)$")
+		if not fs then
+			fs, size, avail, mp = line:match("^([%S]+)%s+[%d%.%w]+%s+[%d%.%w]+%s+([%d%.%w]+)%s+[%d%%]+%s+([%S]+)$")
+		end
+
+		if fs and mp then
+			if mp == "/" or mp == "/overlay" or mp == "/rom" or mp == "/boot"
+				or mp == "/tmp" or mp == "/var" or mp == "/run"
+				or fs:match("^tmpfs$") or fs:match("^devpts$") or fs:match("^proc$")
+				or not mp:match("^/") then
+				-- skip
+			else
+				local avail_mb = 0
+				if avail then
+					local num = avail:match("([%d%.]+)")
+					if avail:match("T") then
+						avail_mb = tonumber(num) * 1024 * 1024
+					elseif avail:match("G") then
+						avail_mb = tonumber(num) * 1024
+					else
+						avail_mb = tonumber(num) or 0
+					end
+				end
+
+				if avail_mb >= 100 then
+					mounts[#mounts + 1] = {
+						mount = mp,
+						size = avail,
+						avail_mb = math.floor(avail_mb),
+						fs = fs or "unknown"
+					}
+				end
+			end
+		end
+	end
+
+	table.sort(mounts, function(a, b)
+		return (a.avail_mb or 0) > (b.avail_mb or 0)
+	end)
+
+	http.prepare_content("application/json")
+	http.write_json({
+		status = "ok",
+		mounts = mounts,
+		current_install_path = sys.exec("uci -q get clawpanel.main.install_path || echo ''"):gsub("%s+", "")
+	})
 end

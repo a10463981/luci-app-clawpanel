@@ -10,8 +10,8 @@ EXTRA_COMMANDS="setup status_service check_update do_update"
 EXTRA_HELP="    setup            下载并安装 ClawPanel
     status_service   显示服务状态"
 
-# ── 安装路径 ──
-CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '/opt')"
+# ── 安装路径（必须由 UCI 配置指定，不允许硬编码默认）──
+CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '')"
 CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
 CP_DATA="${CP_INSTALL_PATH}/data"
 CP_BIN="${CP_INSTALL_PATH}/clawpanel"
@@ -48,10 +48,16 @@ start_service() {
 		return 0
 	}
 
+	# 必须有安装路径，否则拒绝启动
+	if [ -z "$CP_BASE_PATH" ]; then
+		echo "ClawPanel 未指定安装路径，请在 LuCI → 服务 → ClawPanel 中选择安装位置"
+		return 1
+	fi
+
 	# 检查二进制是否存在
 	if [ ! -x "$CP_BIN" ]; then
 		echo "ClawPanel 未安装: $CP_BIN"
-		echo "请运行: clawpanel-env setup"
+		echo "请运行: clawpanel-env setup（需先在 LuCI 中选择安装路径）"
 		return 1
 	fi
 
