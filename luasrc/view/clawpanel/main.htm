@@ -165,11 +165,9 @@ function doSvc(action) {
     var titles = { restart: '重启 ClawPanel', stop: '停止 ClawPanel', start: '启动 ClawPanel' };
     var api = action === 'stop' ? '/wait_stopped' : '/wait_running';
     showModal(titles[action], '执行中...', '正在执行...');
-    // Navigate after showing modal
-    var url = BASE + '/service_ctl?action=' + action;
-    setTimeout(function() {
-        window.location.href = url;
-    }, 100);
+    // Fire-and-forget using Image object
+    var img = new Image();
+    img.src = BASE + '/service_ctl?action=' + action;
     var poll = setInterval(function() {
         xhr(BASE + api, function(d) {
             var ok = (action === 'stop' && d.state === 'stopped') || (action !== 'stop' && d.state === 'running');
@@ -185,11 +183,9 @@ function doSvc(action) {
 function doUninstall() {
     if (!confirm('确认卸载 ClawPanel？\n这将停止服务并删除所有文件。')) return;
     showModal('正在卸载', '执行中...', '正在卸载...');
-    // Use setTimeout + location.href - show modal first, then navigate
-    var url = BASE + '/uninstall';
-    setTimeout(function() {
-        window.location.href = url;
-    }, 100);
+    // Fire-and-forget using Image object
+    var img = new Image();
+    img.src = BASE + '/uninstall';
     var poll = setInterval(function() {
         xhr(BASE + '/status_api', function(d) {
             if (!d.install_path || d.install_path === '') {
