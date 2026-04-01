@@ -53,9 +53,8 @@ CP_ARCH=$(get_arch)
 get_download_url() {
     local ver="$1"
     local arch="$2"
-    # Version tag like "pro-v5.3.3" or "lite-v0.2.3" → strip edition prefix for filename
-    # Actual asset name: clawpanel-v5.3.3-linux-arm64 (not clawpanel-pro-v5.3.3-linux-arm64)
-    local ver_stripped=$(echo "$ver" | sed 's/^pro-v//;s/^lite-v//;s/^v//')
+    # Version tag "pro-v5.3.3" → asset filename "clawpanel-v5.3.3-linux-arm64"
+    local ver_stripped=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/;s/^v\([0-9]\)/v\1/')
     echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
 }
 
