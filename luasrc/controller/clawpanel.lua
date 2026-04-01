@@ -18,8 +18,7 @@ end
 
 function index()
 	entry({"admin", "services", "clawpanel"},
-		alias("admin", "services", "clawpanel", "basic"),
-		_("ClawPanel"), 85).dependent = false
+		template("clawpanel/main"), _("ClawPanel"), 85).dependent = false
 
 	entry({"admin", "services", "clawpanel", "basic"},
 		cbi("clawpanel/basic"), _("状态与设置"), 10).leaf = true
