@@ -92,14 +92,23 @@ start_service() {
 	}
 	_ensure_port_free "$port"
 
-	# 启动 ClawPanel
+	# 从 .version 文件读取 ClawPanel 程序版本号
+	local cp_ver
+	if [ -f "${CP_INSTALL_PATH}/.version" ]; then
+		cp_ver=$(cat "${CP_INSTALL_PATH}/.version" 2>/dev/null | tr -d '[:space:]')
+	fi
+	[ -z "$cp_ver" ] && cp_ver="5.3.3"
+
+	# pro-v5.3.3 → 程序版本号 5.3.3
+	# lite-v0.2.3 → 程序版本号 0.2.3
+	cp_ver=$(echo "$cp_ver" | sed 's/^pro-v//;s/^lite-v//')
+
+	# OpenClaw 数据目录（放在外置存储，不要在 /root）
+	local openclaw_dir="${CP_DATA}/.openclaw"
+
+	# 启动 ClawPanel，命令行参数传递数据目录
 	procd_open_instance
-	procd_set_param command "$CP_BIN"
-	procd_set_param env \
-		CLAWPANEL_PORT="$port" \
-		CLAWPANEL_DATA="$CP_DATA" \
-		OPENCLAW_DIR="${CP_DATA}/.openclaw" \
-		CLAWPANEL_EDITION="$edition"
+	procd_set_param command "$CP_BIN" --updater-standalone "$cp_ver" "$CP_DATA" "$port" "$openclaw_dir"
 	procd_set_param respawn 3600 10 5
 	procd_set_param stdout 1
 	procd_set_param stderr 1
