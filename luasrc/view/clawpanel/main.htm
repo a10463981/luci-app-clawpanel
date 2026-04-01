@@ -1,9 +1,10 @@
 <%#
-main.htm - ClawPanel 主页（form submit，无 AJAX）
+main.htm - ClawPanel 主页
 -%>
 <%+header%>
 
 <style>
+body{padding:20px;font-family:inherit}
 .cp-badge{display:inline-block;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
 .cp-badge-running{background:#e6f7e9;color:#1a7f37}
 .cp-badge-stopped{background:#ffeef0;color:#cf222e}
@@ -25,35 +26,10 @@ main.htm - ClawPanel 主页（form submit，无 AJAX）
 .cp-modal-box{background:#fff;border-radius:12px;padding:24px;max-width:480px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto}
 </style>
 
-<div class="cp-panel">
-<div class="cp-panel-title">ClawPanel 服务状态</div>
-<table>
-<tr><td>运行状态</td><td><span class="cp-badge cp-badge-disabled">请刷新页面查看状态</span></td></tr>
-<tr><td>面板服务</td><td>-</td></tr>
-<tr><td>安装路径</td><td>-</td></tr>
-</table>
-</div>
-
-<div style="margin-bottom:14px">
-<button class="cp-btn cp-btn-apply" onclick="showInstall()">安装/重装</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('restart')">重启</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('stop')">停止</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('start')">启动</button>
-<button class="cp-btn cp-btn-remove" onclick="showUninstall()">卸载</button>
-</div>
-
-<div style="border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;line-height:1.8;font-size:13px">
-<strong>使用指南</strong><br/>
-首次使用：点击「安装/重装」输入路径并开始安装<br/>
-完成后访问 <b>http://路由器IP:19527</b> 进入 ClawPanel<br/>
-<strong style="color:#cf222e">必须安装到外置存储（/mnt/sda1 等），禁止系统分区</strong>
-</div>
-
 <!-- 安装弹窗 -->
 <div class="cp-modal" id="m-install">
 <div class="cp-modal-box">
 <h3 style="margin:0 0 16px 0">安装 ClawPanel</h3>
-
 <div style="margin-bottom:14px">
 <div style="font-weight:600;font-size:13px;margin-bottom:8px">选择版本</div>
 <label style="display:block;padding:12px;border:2px solid #4a90d9;border-radius:8px;background:#f0f7ff;margin-bottom:8px;cursor:pointer">
@@ -64,7 +40,6 @@ main.htm - ClawPanel 主页（form submit，无 AJAX）
 <input type="text" id="ver-custom" placeholder="如: 5.3.3" style="margin-left:8px;padding:4px 8px;border:1px solid #d0d7de;border-radius:4px">
 </label>
 </div>
-
 <div style="border-top:1px solid #eee;padding-top:14px">
 <div style="font-weight:600;font-size:13px;margin-bottom:8px">
 安装路径 <span style="color:#cf222e">(必填，外置存储挂载点)</span>
@@ -74,7 +49,6 @@ style="width:100%;padding:8px 12px;border:1px solid #d0d7de;border-radius:6px;fo
 <div style="font-size:12px;color:#888;margin-bottom:4px">常见路径: /mnt/sda1、/mnt/sdb1、/mnt/data、/mnt/sata1</div>
 <div style="font-size:12px;color:#cf222e">禁止: /overlay、/opt、/、/boot、/rom 等系统分区</div>
 </div>
-
 <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
 <button class="cp-btn cp-btn-action" onclick="closeModals()">取消</button>
 <button class="cp-btn cp-btn-apply" onclick="doInstall()">开始安装</button>
@@ -101,7 +75,42 @@ style="width:100%;padding:8px 12px;border:1px solid #d0d7de;border-radius:6px;fo
 </div>
 </div>
 
+<div class="cp-panel">
+<div class="cp-panel-title">ClawPanel 服务状态</div>
+<table>
+<tr><td>运行状态</td><td id="s-status"><span class="cp-badge cp-badge-disabled">加载中...</span></td></tr>
+<tr><td>面板服务</td><td id="s-port">-</td></tr>
+<tr><td>进程 PID</td><td id="s-pid">-</td></tr>
+<tr><td>内存占用</td><td id="s-mem">-</td></tr>
+<tr><td>运行时间</td><td id="s-uptime">-</td></tr>
+<tr><td>版本</td><td id="s-ver">-</td></tr>
+<tr><td>安装路径</td><td id="s-path">-</td></tr>
+<tr><td>剩余空间</td><td id="s-disk">-</td></tr>
+</table>
+</div>
+
+<div style="margin-bottom:14px">
+<button class="cp-btn cp-btn-apply" onclick="showInstall()">安装/重装</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('restart')">重启</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('stop')">停止</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('start')">启动</button>
+<button class="cp-btn cp-btn-remove" onclick="showUninstall()">卸载</button>
+<button class="cp-btn cp-btn-action" onclick="location.reload()" style="float:right">刷新状态</button>
+</div>
+
+<div id="cp-msg" style="margin-bottom:14px;font-size:13px"></div>
+
+<div style="border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;line-height:1.8;font-size:13px">
+<strong>使用指南</strong><br/>
+首次使用：点击「安装/重装」输入路径并开始安装<br/>
+完成后访问 <b>http://路由器IP:19527</b> 进入 ClawPanel<br/>
+<strong style="color:#cf222e">必须安装到外置存储（/mnt/sda1 等），禁止系统分区</strong>
+</div>
+
 <script>
+// 页面每 10 秒自动刷新以更新状态
+setTimeout(function(){location.reload();}, 10000);
+
 function showInstall(){document.getElementById('m-install').classList.add('show')}
 function showUninstall(){document.getElementById('m-uninstall').classList.add('show')}
 function closeModals(){
@@ -112,8 +121,10 @@ document.addEventListener('click',function(e){
 	if(e.target.classList.contains('cp-modal'))closeModals();
 });
 
+function setMsg(html){document.getElementById('cp-msg').innerHTML=html;}
+
 function doInstall(){
-	var path = document.getElementById('f-path').value.trim();
+	var path=document.getElementById('f-path').value.trim();
 	if(!path){alert('请输入安装路径');return;}
 	var dangerous=['/overlay','/rom','/boot','/proc','/sys','/dev','/opt','/tmp','/var','/etc','/root','/usr','/bin','/sbin','/lib','/'];
 	for(var i=0;i<dangerous.length;i++){
@@ -126,7 +137,6 @@ function doInstall(){
 	for(var i=0;i<radios.length;i++){if(radios[i].checked)ver=radios[i].value;}
 	var version='';
 	if(ver==='custom'){version=document.getElementById('ver-custom').value.trim();}
-
 	var form=document.createElement('form');
 	form.method='GET';
 	form.action='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl';
@@ -155,6 +165,38 @@ function doSvc(action){
 	document.body.appendChild(form);
 	form.submit();
 }
+
+// 尝试用 script 标签加载 JSON API（不受 AJAX 限制）
+function loadStatus(){
+	try{
+		var el=document.createElement('script');
+		el.src='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/status_api?callback=updateStatus&r='+Math.random();
+		document.head.appendChild(el);
+	}catch(e){}
+}
+
+function updateStatus(data){
+	if(!data)return;
+	var badgeClass='cp-badge-unknown';
+	var badgeText='未知';
+	if(data.panel_running){
+		badgeClass='cp-badge-running';badgeText='运行中';
+	}else if(data.enabled==='1'){
+		badgeClass='cp-badge-stopped';badgeText='已停止';
+	}else{
+		badgeClass='cp-badge-disabled';badgeText='未安装';
+	}
+	document.getElementById('s-status').innerHTML='<span class="cp-badge '+badgeClass+'">'+badgeText+'</span>';
+	document.getElementById('s-port').textContent=data.port||'-';
+	document.getElementById('s-pid').textContent=data.pid||'-';
+	document.getElementById('s-mem').textContent=data.memory_kb?(data.memory_kb+' KB'):'-';
+	document.getElementById('s-uptime').textContent=data.uptime||'-';
+	document.getElementById('s-ver').textContent=data.panel_version||'-';
+	document.getElementById('s-path').textContent=data.install_path||'-';
+	document.getElementById('s-disk').textContent=data.disk_free||'-';
+}
+
+loadStatus();
 </script>
 
 <%+footer%>

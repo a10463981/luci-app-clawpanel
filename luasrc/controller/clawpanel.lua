@@ -52,16 +52,13 @@ function action_status()
 	local port = uci:get("clawpanel", "main", "port") or "19527"
 	local enabled = uci:get("clawpanel", "main", "enabled") or "0"
 	local install_path = uci:get("clawpanel", "main", "install_path") or ""
-	local edition = uci:get("clawpanel", "main", "edition") or "pro"
 	local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
 
 	local result = {
 		enabled = enabled,
 		port = port,
-		edition = edition,
 		install_path = install_path,
 		panel_running = false,
-		panel_starting = false,
 		pid = "",
 		memory_kb = 0,
 		uptime = "",
@@ -69,23 +66,13 @@ function action_status()
 		disk_free = ""
 	}
 
-	-- ClawPanel 版本
 	if cp_bin ~= "" then
 		result.panel_version = trim(sh(cp_bin .. " --version"))
 	end
 
-	-- 端口检测
 	local cnt = trim(sh("ss -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || netstat -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || echo 0"))
 	result.panel_running = (tonumber(cnt) or 0) > 0
 
-	if not result.panel_running and enabled == "1" then
-		local pid = trim(sh("pgrep -f 'clawpanel' 2>/dev/null | head -1"))
-		if pid ~= "" then
-			result.panel_starting = true
-		end
-	end
-
-	-- PID、内存、运行时间
 	if result.panel_running then
 		local pid = trim(sh("ss -tulnp 2>/dev/null | grep ':" .. port .. " ' | head -1 | sed 's/.*pid=//' | sed 's|/.*||' | awk '{print $1}'"))
 		if pid == "" then
@@ -102,28 +89,30 @@ function action_status()
 				local h = math.floor(up / 3600)
 				local m = math.floor((up % 3600) / 60)
 				local s = up % 60
-				if h > 0 then
-					result.uptime = string.format("%dh %dm %ds", h, m, s)
-				elseif m > 0 then
-					result.uptime = string.format("%dm %ds", m, s)
-				else
-					result.uptime = s .. "s"
-				end
+				if h > 0 then result.uptime = string.format("%dh %dm %ds", h, m, s)
+				elseif m > 0 then result.uptime = string.format("%dm %ds", m, s)
+				else result.uptime = s .. "s" end
 			end
 		end
 	end
 
-	-- 磁盘剩余空间
 	if install_path ~= "" then
 		local parent = install_path:match("^(.*)/[^/]+$") or "/"
 		local disk = trim(sh("df -h " .. parent .. " 2>/dev/null | tail -1 | awk '{print $4}'"))
-		if disk ~= "" then
-			result.disk_free = disk
-		end
+		if disk ~= "" then result.disk_free = disk end
 	end
 
-	http.prepare_content("application/json")
-	http.write_json(result)
+	-- JSONP 支持：检查是否有 callback 参数
+	local callback = http.formvalue("callback") or http.getenv("callback") or ""
+	if callback ~= "" then
+		http.prepare_content("application/javascript; charset=utf-8")
+		http.write(callback .. "(")
+		http.write_json(result)
+		http.write(");")
+	else
+		http.prepare_content("application/json; charset=utf-8")
+		http.write_json(result)
+	end
 end
 
 function action_service_ctl()
