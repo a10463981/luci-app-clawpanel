@@ -53,8 +53,10 @@ CP_ARCH=$(get_arch)
 get_download_url() {
     local ver="$1"
     local arch="$2"
-    # GitHub releases URL (primary, correct format)
-    echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver#v}-linux-${arch}"
+    # Version tag like "pro-v5.3.3" or "lite-v0.2.3" → strip edition prefix for filename
+    # Actual asset name: clawpanel-v5.3.3-linux-arm64 (not clawpanel-pro-v5.3.3-linux-arm64)
+    local ver_stripped=$(echo "$ver" | sed 's/^pro-v//;s/^lite-v//;s/^v//')
+    echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
 }
 
 # Check disk space
