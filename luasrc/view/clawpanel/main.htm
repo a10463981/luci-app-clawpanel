@@ -143,15 +143,12 @@ function doInstall() {
     if (path === '/' || path.indexOf('/overlay') === 0 || path.indexOf('/proc') === 0 || path.indexOf('/sys') === 0 || path.indexOf('/dev') === 0 || path.indexOf('/etc') === 0) {
         alert('系统路径被禁止，请使用外置存储路径'); return;
     }
-    showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...<br><br><span style="color:#888">安装将在后台进行。</span><br>主页面轮询等待完成。');
-    // Submit to hidden iframe
-    var f = document.createElement('form');
-    f.method = 'GET';
-    f.action = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
-    f.target = 'cp_frame';
-    document.body.appendChild(f);
-    f.submit();
-    document.body.removeChild(f);
+    showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...<br><br><span style="color:#888">请稍候，安装完成后将自动刷新。</span>');
+    // Navigate after showing modal
+    var url = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
+    setTimeout(function() {
+        window.location.href = url;
+    }, 100);
     var poll = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
             if (d.state === 'success') {
@@ -177,14 +174,11 @@ function doSvc(action) {
     var titles = { restart: '重启 ClawPanel', stop: '停止 ClawPanel', start: '启动 ClawPanel' };
     var api = action === 'stop' ? '/wait_stopped' : '/wait_running';
     showModal(titles[action], '执行中...', '正在执行...');
-    // Submit to hidden iframe
-    var f = document.createElement('form');
-    f.method = 'GET';
-    f.action = BASE + '/service_ctl?action=' + action;
-    f.target = 'cp_frame';
-    document.body.appendChild(f);
-    f.submit();
-    document.body.removeChild(f);
+    // Navigate after showing modal
+    var url = BASE + '/service_ctl?action=' + action;
+    setTimeout(function() {
+        window.location.href = url;
+    }, 100);
     var poll = setInterval(function() {
         xhr(BASE + api, function(d) {
             var ok = (action === 'stop' && d.state === 'stopped') || (action !== 'stop' && d.state === 'running');
