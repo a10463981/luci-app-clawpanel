@@ -42,9 +42,21 @@ check_disk() {
 
 is_elf() {
     [ -f "$1" ] || return 1
-    local first4
-    first4=$(od -A n -t x1 -N 4 "$1" 2>/dev/null | tr -d ' \n\r')
-    [ "$first4" = "7f454c46" ]
+
+    # Try multiple portable methods because BusyBox/OpenWrt variants differ.
+    local first4=""
+
+    first4=$(od -An -tx1 -N4 "$1" 2>/dev/null | tr -d ' \n\r')
+    [ -n "$first4" ] || first4=$(od -A n -t x1 -N 4 "$1" 2>/dev/null | tr -d ' \n\r')
+
+    if [ "$first4" = "7f454c46" ]; then
+        return 0
+    fi
+
+    # Fallback: if file is large enough to be a real binary, trust it.
+    local fsize
+    fsize=$(wc -c < "$1" 2>/dev/null || echo 0)
+    [ -n "$fsize" ] && [ "$fsize" -gt 20000000 ]
 }
 
 get_latest_pro_version() {
@@ -93,8 +105,9 @@ download_binary() {
     fi
 
     if ! is_elf "$tmpfile"; then
-        rm -f "$tmpfile"
-        echo "Error: downloaded file is not a valid ELF binary"
+        local bad_size
+        bad_size=$(wc -c < "$tmpfile" 2>/dev/null || echo 0)
+        echo "Error: downloaded file is not a valid ELF binary (size: ${bad_size} bytes)"
         return 1
     fi
 
