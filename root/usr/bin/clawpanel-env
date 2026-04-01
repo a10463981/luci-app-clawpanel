@@ -326,32 +326,33 @@ do_setup() {
 		mv "$CP_BIN" "${CP_BIN}.bak" 2>/dev/null || true
 	fi
 
-	# 判断是 tar.gz 包还是直接二进制
-	local first_bytes=$(head -c 2 "$tmpfile" 2>/dev/null | xxd -p 2>/dev/null || echo "")
-	if [ "$first_bytes" = "1f8b" ]; then
-		# tar.gz 格式（Lite）——解压
-		log_info "解压 Lite 安装包..."
-		if ! tar -xzf "$tmpfile" -C /tmp 2>/dev/null; then
-			log_error "解压失败"
+	# 判断是 tar.gz 包还是直接二进制（Pro 是单文件，Lite 是 .tar.gz）
+	case "$filename" in
+		*.tar.gz)
+			log_info "解压 Lite 安装包..."
+			if ! tar -xzf "$tmpfile" -C /tmp 2>&1; then
+				log_error "解压失败"
+				rm -f "$tmpfile"
+				return 1
+			fi
+			# 查找解压出来的二进制文件
+			local bin_path
+			bin_path=$(find /tmp -name "clawpanel*" -type f -executable 2>/dev/null | head -1)
+			if [ -z "$bin_path" ] || [ ! -x "$bin_path" ]; then
+				log_error "解压后未找到可执行文件"
+				rm -f "$tmpfile"
+				return 1
+			fi
+			log_info "找到二进制: $bin_path"
+			mv "$bin_path" "$CP_BIN"
 			rm -f "$tmpfile"
-			return 1
-		fi
-		# 查找解压出来的二进制文件
-		local bin_path=$(find /tmp -name "clawpanel*" -type f -executable 2>/dev/null | head -1)
-		if [ -z "$bin_path" ] || [ ! -x "$bin_path" ]; then
-			log_error "解压后未找到可执行文件"
-			rm -f "$tmpfile"
-			return 1
-		fi
-		log_info "找到二进制: $bin_path"
-		mv "$bin_path" "$CP_BIN"
-		rm -f "$tmpfile"
-		# 清理临时解压文件
-		rm -rf /tmp/clawpanel* 2>/dev/null || true
-	else
-		# 直接二进制（Pro）
-		mv "$tmpfile" "$CP_BIN"
-	fi
+			rm -rf /tmp/clawpanel* 2>/dev/null || true
+			;;
+		*)
+			# 直接二进制（Pro）
+			mv "$tmpfile" "$CP_BIN"
+			;;
+	esac
 	chmod +x "$CP_BIN"
 
 	# ── 创建目录结构 ──
