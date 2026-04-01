@@ -19,8 +19,8 @@ local enabled = uci:get("clawpanel", "main", "enabled") or "0"
 local install_path = uci:get("clawpanel", "main", "install_path") or ""
 local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
 
--- 检测端口是否在监听
-local port_listen_count = trim(sh("ss -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || netstat -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || echo 0"))
+-- 检测端口是否在监听（ss优先，pgrep兜底）
+local port_listen_count = trim(sh("command -v ss >/dev/null 2>&1 && ss -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || pgrep -f 'clawpanel.*" .. port .. "' | wc -l"))
 local panel_running = (tonumber(port_listen_count) or 0) > 0
 
 -- 获取 PID
@@ -70,8 +70,8 @@ end
 -- 磁盘剩余
 local disk_free = ""
 if install_path ~= "" then
-	local parent = install_path:match("^(.*)/[^/]+$") or "/"
-	disk_free = trim(sh("df -h " .. parent .. " 2>/dev/null | tail -1 | awk '{print $4}'"))
+	-- 直接在目标路径上查 df，不要取 parent
+	disk_free = trim(sh("df -h '" .. install_path .. "' 2>/dev/null | tail -1 | awk '{print $4}'"))
 end
 
 -- 状态 badge
