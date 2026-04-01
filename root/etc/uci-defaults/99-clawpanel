@@ -1,0 +1,30 @@
+#!/bin/sh
+# luci-app-clawpanel — UCI defaults
+# 首次安装时初始化 UCI 配置
+
+. /lib/functions.sh
+
+ucidef_set() {
+	local cfg="$1"
+	local key="$2"
+	local val="$3"
+	uci set clawpanel.${cfg}.${key}="$val"
+}
+
+# 如果配置不存在则创建
+[ -z "$(uci get clawpanel.main 2>/dev/null)" ] && {
+	uci add clawpanel main >/dev/null 2>&1
+}
+
+# 默认值
+uci set clawpanel.main.enabled='0'
+uci set clawpanel.main.install_path='/opt'
+uci set clawpanel.main.port='19527'
+uci set clawpanel.main.edition='pro'
+uci set clawpanel.main.auto_start='1'
+uci commit clawpanel
+
+# 启用自启动
+/etc/init.d/clawpanel enable 2>/dev/null
+
+exit 0

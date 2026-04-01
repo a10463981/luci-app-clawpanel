@@ -1,0 +1,167 @@
+#!/bin/sh /etc/rc.common
+# luci-app-clawpanel — procd init 脚本
+# ClawPanel 管理面板自启动管理
+
+USE_PROCD=1
+START=99
+STOP=10
+
+EXTRA_COMMANDS="setup status_service check_update do_update"
+EXTRA_HELP="    setup            下载并安装 ClawPanel
+    status_service   显示服务状态"
+
+# ── 安装路径 ──
+CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '/opt')"
+CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
+CP_DATA="${CP_INSTALL_PATH}/data"
+CP_BIN="${CP_INSTALL_PATH}/clawpanel"
+
+# ── OverlayFS 兼容性修复 ──
+_cp_fix_opt() {
+	[ "$CP_BASE_PATH" != "/opt" ] && return 0
+	mkdir -p /opt/clawpanel/.probe 2>/dev/null && { rmdir /opt/clawpanel/.probe 2>/dev/null; return 0; }
+	if [ -d /overlay/upper/opt ]; then
+		mkdir -p /overlay/upper/opt/clawpanel 2>/dev/null
+		mount --bind /overlay/upper/opt /opt 2>/dev/null && return 0
+	fi
+	return 1
+}
+_cp_fix_opt
+
+get_cp_version() {
+	if [ -x "$CP_BIN" ]; then
+		"$CP_BIN" --version 2>/dev/null | tr -d '[:space:]' || echo "unknown"
+	else
+		echo "not_installed"
+	fi
+}
+
+start_service() {
+	local enabled port edition
+	config_load clawpanel
+	config_get enabled main enabled "0"
+	config_get port main port "19527"
+	config_get edition main edition "pro"
+
+	[ "$enabled" = "1" ] || {
+		echo "ClawPanel 已禁用。请在 /etc/config/clawpanel 中设置 enabled 为 1"
+		return 0
+	}
+
+	# 检查二进制是否存在
+	if [ ! -x "$CP_BIN" ]; then
+		echo "ClawPanel 未安装: $CP_BIN"
+		echo "请运行: clawpanel-env setup"
+		return 1
+	fi
+
+	# 确保数据目录存在
+	mkdir -p "$CP_DATA" 2>/dev/null
+
+	# 确保端口为纯数字
+	port=$(echo "$port" | tr -cd '0-9')
+	[ -z "$port" ] && port=19527
+
+	# 确保端口未被占用
+	_ensure_port_free() {
+		local p="$1"
+		local i=0
+		if command -v ss >/dev/null 2>&1; then
+			ss -tulnp 2>/dev/null | grep -q ":${p} " || return 0
+		else
+			netstat -tulnp 2>/dev/null | grep -q ":${p} " || return 0
+		fi
+		for occ_pid in $(pgrep -f "clawpanel" 2>/dev/null); do
+			kill "$occ_pid" 2>/dev/null
+		done
+		while [ $i -lt 20 ]; do
+			if command -v ss >/dev/null 2>&1; then
+				ss -tulnp 2>/dev/null | grep -q ":${p} " || return 0
+			else
+				netstat -tulnp 2>/dev/null | grep -q ":${p} " || return 0
+			fi
+			usleep 200000 2>/dev/null || sleep 0.2
+			i=$((i + 1))
+		done
+	}
+	_ensure_port_free "$port"
+
+	# 启动 ClawPanel
+	procd_open_instance
+	procd_set_param command "$CP_BIN"
+	procd_set_param env \
+		CLAWPANEL_PORT="$port" \
+		CLAWPANEL_DATA="$CP_DATA" \
+		OPENCLAW_DIR="${CP_DATA}/.openclaw" \
+		CLAWPANEL_EDITION="$edition"
+	procd_set_param respawn 3600 10 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param pidfile /var/run/clawpanel.pid
+	procd_close_instance
+
+	echo "ClawPanel 启动命令已提交 (端口 $port)"
+}
+
+stop_service() {
+	local port
+	port=$(uci -q get clawpanel.main.port || echo "19527")
+	port=$(echo "$port" | tr -cd '0-9')
+	[ -z "$port" ] && port=19527
+
+	# 杀掉所有 clawpanel 相关进程
+	for pid in $(pgrep -f "clawpanel" 2>/dev/null); do
+		kill "$pid" 2>/dev/null
+	done
+
+	# 等待端口释放
+	local i=0
+	while [ $i -lt 15 ]; do
+		if command -v ss >/dev/null 2>&1; then
+			ss -tulnp 2>/dev/null | grep -q ":${port} " || break
+		else
+			netstat -tulnp 2>/dev/null | grep -q ":${port} " || break
+		fi
+		usleep 200000 2>/dev/null || sleep 0.2
+		i=$((i + 1))
+	done
+
+	# 强制杀掉残留
+	local port_pid=""
+	if command -v ss >/dev/null 2>&1; then
+		port_pid=$(ss -tulnp 2>/dev/null | grep ":${port} " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)
+	else
+		port_pid=$(netstat -tulnp 2>/dev/null | grep ":${port} " | sed -n 's|.* \([0-9]*\)/.*|\1|p' | head -1)
+	fi
+	[ -n "$port_pid" ] && kill -9 "$port_pid" 2>/dev/null
+}
+
+service_triggers() {
+	procd_add_reload_trigger "clawpanel"
+}
+
+reload_service() {
+	stop_service
+	sleep 1
+	start_service
+}
+
+status_service() {
+	local port edition enabled
+	port=$(uci -q get clawpanel.main.port || echo "19527")
+	edition=$(uci -q get clawpanel.main.edition || echo "pro")
+	enabled=$(uci -q get clawpanel.main.enabled || echo "0")
+
+	echo "=== ClawPanel 服务状态 ==="
+	echo "启用状态: $enabled"
+	echo "版本:     $(get_cp_version)"
+	echo "安装路径: $CP_INSTALL_PATH"
+	echo "监听端口: $port"
+	echo "版本形态: $edition"
+
+	if command -v ss >/dev/null 2>&1; then
+		ss -tulnp 2>/dev/null | grep ":${port} " && echo "状态:     运行中" || echo "状态:     未监听"
+	else
+		netstat -tulnp 2>/dev/null | grep ":${port} " && echo "状态:     运行中" || echo "状态:     未监听"
+	fi
+}

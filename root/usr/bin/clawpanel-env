@@ -1,0 +1,339 @@
+#!/bin/sh
+# ============================================================================
+# clawpanel-env — ClawPanel 环境检测与安装脚本
+# 用法:
+#   clawpanel-env setup     — 完整安装 ClawPanel
+#   clawpanel-env check     — 检查环境状态
+#   clawpanel-env version   — 获取最新版本号
+# 环境变量:
+#   CP_VERSION    — 指定 ClawPanel 版本 (如 5.3.3)，不设置则安装最新版
+#   CP_BASE_PATH  — 指定安装路径 (如 /opt)，默认 /opt
+# ============================================================================
+set -e
+
+# ── 版本配置 ──
+CP_VERSION="${CP_VERSION:-}"  # 不指定则自动获取最新版
+CP_BASE_PATH="${CP_BASE_PATH:-$(uci -q get clawpanel.main.install_path || echo '/opt')}"
+CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
+CP_DATA="${CP_INSTALL_PATH}/data"
+CP_BIN="${CP_INSTALL_PATH}/clawpanel"
+
+# ClawPanel GitHub 地址
+CP_REPO="zhaoxinyi02/ClawPanel"
+CP_DOWNLOAD_BASE="https://github.com/${CP_REPO}/releases/download"
+
+# ── OverlayFS 兼容性修复 ──
+_cp_fix_opt() {
+	[ "$CP_BASE_PATH" != "/opt" ] && return 0
+	mkdir -p /opt/clawpanel/.probe 2>/dev/null && { rmdir /opt/clawpanel/.probe 2>/dev/null; return 0; }
+	if [ -d /overlay/upper/opt ]; then
+		mkdir -p /overlay/upper/opt/clawpanel 2>/dev/null
+		mount --bind /overlay/upper/opt /opt 2>/dev/null && return 0
+	fi
+	return 1
+}
+_cp_fix_opt
+
+log_info() { echo "  [✓] $1"; }
+log_warn() { echo "  [!] $1"; }
+log_error() { echo "  [✗] $1"; }
+log_step() { echo ""; echo "  ▶ $1"; }
+
+# ── 检测 CPU 架构 ──
+detect_arch() {
+	local arch=$(uname -m)
+	case "$arch" in
+		x86_64)     echo "amd64" ;;
+	aarch64)     echo "arm64" ;;
+	armv7l)      echo "armhf" ;;
+	armv6l)      echo "armv6" ;;
+	aarch32|arm) echo "arm" ;;
+	i386|i686)   echo "386" ;;
+	mips|mips64) echo "mips" ;;
+	mipsel|mips64el) echo "mipsle" ;;
+	*)           echo "$arch" ;;
+	esac
+}
+
+# ── 检测操作系统 ──
+detect_os() {
+	if [ -f /etc/openwrt_release ] || grep -qi "openwrt\|istoreos\|lede" /etc/os-release 2>/dev/null; then
+		echo "openwrt"
+	elif [ -f /etc/debian_version ]; then
+		echo "debian"
+	elif [ -f /etc/redhat-release ]; then
+		echo "rhel"
+	else
+		echo "linux"
+	fi
+}
+
+# ── 获取最新版本号 ──
+get_latest_version() {
+	local ver
+	ver=$(curl -sf --connect-timeout 8 --max-time 15 \
+		"https://api.github.com/repos/${CP_REPO}/releases/latest" \
+		2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/' | tr -d '[:space:]')
+	if [ -z "$ver" ]; then
+		# 回退到 Gitee
+		ver=$(curl -sf --connect-timeout 8 --max-time 15 \
+			"https://gitee.com/api/v5/repos/zxy000006/ClawPanel/releases/latest" \
+			2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/' | tr -d '[:space:]')
+	fi
+	echo "$ver"
+}
+
+# ── 下载文件（支持多镜像回退）──
+download_file() {
+	local url="$1"
+	local dest="$2"
+	local mirrors="$3"  # 备用 URL 列表，逗号分隔
+
+	local ok=false
+	# 主地址
+	if curl -sf --connect-timeout 15 --max-time 300 -L -o "$dest" "$url" 2>/dev/null; then
+		ok=true
+	else
+		# 逐个尝试镜像
+		if [ -n "$mirrors" ]; then
+			IFS=',' read -ra MIRROR_LIST <<EOF
+$mirrors
+EOF
+			for mirror in "${MIRROR_LIST[@]}"; do
+				# 将 URL 中的主地址替换为镜像
+				local mirror_url=$(echo "$url" | sed "s|https://github.com|${mirror}|g")
+				if curl -sf --connect-timeout 15 --max-time 300 -L -o "$dest" "$mirror_url" 2>/dev/null; then
+					ok=true
+					break
+				fi
+			done
+		fi
+	fi
+	$ok
+}
+
+# ── 安装 ClawPanel ──
+do_setup() {
+	log_step "开始安装 ClawPanel"
+	echo "  安装路径: $CP_INSTALL_PATH"
+	echo "  数据目录: $CP_DATA"
+
+	# ── 系统检测 ──
+	log_info "检测系统环境..."
+	local os=$(detect_os)
+	local arch=$(detect_arch)
+	echo "  操作系统: $os"
+	echo "  CPU 架构: $arch"
+
+	# ── 版本解析 ──
+	local version="$CP_VERSION"
+	if [ -z "$version" ]; then
+		log_info "获取最新版本..."
+		version=$(get_latest_version)
+		if [ -z "$version" ]; then
+			log_error "无法获取最新版本，请检查网络连接"
+			return 1
+		fi
+		log_info "最新版本: v$version"
+	fi
+
+	# ── 确定下载文件名 ──
+	# ClawPanel 发布文件名格式: clawpanel-v{version}-{os}-{arch}
+	local os_name=""
+	case "$os" in
+		openwrt) os_name="linux" ;;
+		*)        os_name="linux" ;;
+	esac
+
+	local filename=""
+	case "$os_name-$arch" in
+		linux-amd64)   filename="clawpanel-v${version}-linux-amd64" ;;
+		linux-arm64)   filename="clawpanel-v${version}-linux-arm64" ;;
+		linux-armhf)   filename="clawpanel-v${version}-linux-armhf" ;;
+		linux-armv6)   filename="clawpanel-v${version}-linux-armv6" ;;
+		linux-386)     filename="clawpanel-v${version}-linux-386" ;;
+		linux-mips)    filename="clawpanel-v${version}-linux-mips" ;;
+		linux-mipsle)  filename="clawpanel-v${version}-linux-mipsle" ;;
+		*)
+			log_error "当前架构 ($arch) 暂不支持"
+			return 1
+			;;
+	esac
+
+	# ── 创建目录 ──
+	log_info "创建安装目录..."
+	mkdir -p "$CP_INSTALL_PATH" || { log_error "无法创建安装目录: $CP_INSTALL_PATH"; return 1; }
+	mkdir -p "$CP_DATA"         || { log_error "无法创建数据目录: $CP_DATA"; return 1; }
+
+	# ── 下载二进制 ──
+	local download_url="${CP_DOWNLOAD_BASE}/v${version}/${filename}"
+	# Gitee 镜像
+	local mirror_base="https://gitee.com/zxy000006/ClawPanel/raw/main/release"
+
+	log_info "下载 ClawPanel v$version..."
+	log_info "下载链接: $download_url"
+
+	local tmpfile="/tmp/clawpanel-install-$$.bin"
+	if ! download_file "$download_url" "$tmpfile" "$mirror_base"; then
+		log_error "下载失败: $download_url"
+		rm -f "$tmpfile"
+		return 1
+	fi
+
+	# ── 验证下载文件 ──
+	local size=$(wc -c < "$tmpfile" 2>/dev/null | tr -d '[:space:]')
+	if [ "$size" -lt 100000 ]; then
+		# 文件太小，可能是 404 或错误页
+		log_error "下载文件过小 (${size} bytes)，可能下载失败"
+		rm -f "$tmpfile"
+		return 1
+	fi
+	log_info "下载完成 (${size} bytes)"
+
+	# ── 安装二进制 ──
+	log_info "安装二进制文件..."
+	if [ -f "$CP_BIN" ]; then
+		mv "$CP_BIN" "${CP_BIN}.bak" 2>/dev/null || true
+	fi
+	mv "$tmpfile" "$CP_BIN"
+	chmod +x "$CP_BIN"
+
+	# ── 创建初始数据目录结构 ──
+	mkdir -p "${CP_DATA}/.openclaw" 2>/dev/null || true
+
+	# ── 写入版本信息 ──
+	echo "$version" > "${CP_INSTALL_PATH}/.version"
+
+	# ── 配置 UCI ──
+	uci set clawpanel.main.enabled='1'
+	uci set clawpanel.main.install_path="$CP_BASE_PATH"
+	uci set clawpanel.main.port='19527'
+	uci set clawpanel.main.edition='pro'
+	uci commit clawpanel
+
+	# ── 验证安装 ──
+	local installed_ver=$("$CP_BIN" --version 2>/dev/null | tr -d '[:space:]' || echo "unknown")
+	log_info "安装完成!"
+	log_info "ClawPanel 版本: $installed_ver"
+	log_info "数据目录: $CP_DATA"
+	log_info "监听端口: 19527"
+
+	# ── 自动启动 ──
+	/etc/init.d/clawpanel enable 2>/dev/null
+	log_info "已启用开机自启"
+
+	# ── 启动服务 ──
+	log_info "启动 ClawPanel 服务..."
+	/etc/init.d/clawpanel start 2>/dev/null
+
+	echo ""
+	echo "=========================================="
+	echo "  ClawPanel 安装成功!"
+	echo "  版本: v$version"
+	echo "  访问地址: http://路由器IP:19527"
+	echo "  默认密码: clawpanel"
+	echo "=========================================="
+
+	return 0
+}
+
+# ── 检查环境状态 ──
+do_check() {
+	echo "=== ClawPanel 环境检查 ==="
+	echo "安装路径: $CP_INSTALL_PATH"
+	echo "二进制文件: $CP_BIN"
+	echo "数据目录: $CP_DATA"
+
+	if [ -x "$CP_BIN" ]; then
+		echo "ClawPanel: 已安装 ($("$CP_BIN" --version 2>/dev/null | tr -d '[:space:]'))"
+	else
+		echo "ClawPanel: 未安装"
+	fi
+
+	if pgrep -f "clawpanel" >/dev/null 2>&1; then
+		echo "进程状态: 运行中"
+	else
+		echo "进程状态: 未运行"
+	fi
+
+	local port=$(uci -q get clawpanel.main.port || echo "19527")
+	if command -v ss >/dev/null 2>&1; then
+		if ss -tulnp 2>/dev/null | grep -q ":${port} "; then
+			echo "端口 $port: 已监听"
+		else
+			echo "端口 $port: 未监听"
+		fi
+	else
+		if netstat -tulnp 2>/dev/null | grep -q ":${port} "; then
+			echo "端口 $port: 已监听"
+		else
+			echo "端口 $port: 未监听"
+		fi
+	fi
+
+	local enabled=$(uci -q get clawpanel.main.enabled || echo "0")
+	echo "开机自启: $([ "$enabled" = "1" ] && echo "已启用" || echo "已禁用")"
+}
+
+# ── 获取最新版本 ──
+do_version() {
+	local ver
+	ver=$(get_latest_version)
+	if [ -z "$ver" ]; then
+		echo "无法获取最新版本"
+		return 1
+	fi
+	echo "$ver"
+}
+
+# ── 卸载 ──
+do_uninstall() {
+	log_step "卸载 ClawPanel"
+
+	# 停止服务
+	/etc/init.d/clawpanel stop 2>/dev/null
+	/etc/init.d/clawpanel disable 2>/dev/null
+
+	# 删除安装目录
+	if [ -d "$CP_INSTALL_PATH" ]; then
+		log_info "删除安装目录: $CP_INSTALL_PATH"
+		rm -rf "$CP_INSTALL_PATH"
+	fi
+
+	# 重置 UCI
+	uci set clawpanel.main.enabled='0'
+	uci commit clawpanel
+
+	log_info "卸载完成"
+}
+
+# ── 主逻辑 ──
+ACTION="${1:-}"
+
+case "$ACTION" in
+	setup)
+		do_setup
+		;;
+	check)
+		do_check
+		;;
+	version)
+		do_version
+		;;
+	uninstall)
+		do_uninstall
+		;;
+	*)
+		echo "ClawPanel 环境管理脚本"
+		echo ""
+		echo "用法:"
+		echo "  clawpanel-env setup     安装 ClawPanel"
+		echo "  clawpanel-env check    检查环境状态"
+		echo "  clawpanel-env version  获取最新版本号"
+		echo "  clawpanel-env uninstall 卸载 ClawPanel"
+		echo ""
+		echo "环境变量:"
+		echo "  CP_VERSION    指定版本号 (如 5.3.3)"
+		echo "  CP_BASE_PATH 指定安装路径 (默认 /opt)"
+		;;
+esac

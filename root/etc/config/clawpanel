@@ -1,0 +1,6 @@
+config clawpanel 'main'
+	option enabled '0'
+	option install_path '/opt'
+	option port '19527'
+	option edition 'pro'
+	option auto_start '1'
