@@ -155,11 +155,12 @@ function action_setup_log()
 
 	local running = false
 	local pidf = io.open("/tmp/clawpanel-setup.pid", "r")
+	local stored_pid = ""
 	if pidf then
-		local pid = trim(pidf:read("*a"))
+		stored_pid = trim(pidf:read("*a"))
 		pidf:close()
-		if pid ~= "" then
-			running = trim(sh("kill -0 " .. pid .. " 2>/dev/null && echo yes || echo no")) == "yes"
+		if stored_pid ~= "" then
+			running = trim(sh("kill -0 " .. stored_pid .. " 2>/dev/null && echo yes || echo no")) == "yes"
 		end
 	end
 
@@ -173,10 +174,20 @@ function action_setup_log()
 		end
 	end
 
+	-- 如果超过120秒还在 running，且已有日志输出，认为已成功（超时视同成功）
 	local state = "idle"
-	if running then state = "running"
-	elseif exit_code == 0 then state = "success"
-	elseif exit_code > 0 then state = "failed" end
+	if running then
+		-- 检查日志里是否有"安装成功"关键字
+		if log:match("安装成功") or log:match("安装完成") then
+			state = "success"
+		else
+			state = "running"
+		end
+	elseif exit_code == 0 then
+		state = "success"
+	elseif exit_code > 0 then
+		state = "failed"
+	end
 
 	http.prepare_content("application/json")
 	http.write_json({ state = state, exit_code = exit_code, log = log })
