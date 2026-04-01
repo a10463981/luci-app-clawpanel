@@ -49,15 +49,13 @@ get_arch() {
 CP_ARCH=$(get_arch)
 [ -z "$CP_ARCH" ] && { echo "Unsupported architecture: $(uname -m)"; exit 1; }
 
-# Detect download source - use Chinese mirror proxy for speed
+# Detect download source - build direct GitHub URL
 get_download_url() {
     local ver="$1"
     local arch="$2"
     # Version tag "pro-v5.3.3" → asset filename "clawpanel-v5.3.3-linux-arm64"
     local ver_stripped=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/;s/^v\([0-9]\)/v\1/')
-    local raw_url="https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
-    # Use ghproxy.com for China speedup, fallback to raw GitHub
-    echo "https://ghproxy.com/${raw_url}"
+    echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
 }
 
 # Check disk space
@@ -98,9 +96,9 @@ download_binary() {
     echo "Downloading from: $url"
 
     local tmpfile="/tmp/clawpanel_bin_$$"
-    # Download silently (-s), follow redirects (-L), capture HTTP code (-w)
+    # Download: -L follow redirects, -s silent, --fail fail on HTTP errors
     local http_code
-    http_code=$(curl -sL -o "$tmpfile" -w "%{http_code}" "$url")
+    http_code=$(curl -sL -o "$tmpfile" -w "%{http_code}" --fail --location-timeout 60 "$url" 2>/dev/null)
 
     if [ "$http_code" != "200" ]; then
         rm -f "$tmpfile"
@@ -108,10 +106,10 @@ download_binary() {
         return 1
     fi
 
-    # Check file size: arm64 binary should be ~28MB
+    # Check file size: arm64 binary should be >10MB
     local fsize
     fsize=$(wc -c < "$tmpfile" 2>/dev/null || echo "0")
-    if [ -z "$fsize" ] || [ "$fsize" -lt 1000000 ]; then
+    if [ -z "$fsize" ] || [ "$fsize" -lt 10000000 ]; then
         rm -f "$tmpfile"
         echo "Error: Downloaded file too small (${fsize} bytes), not a valid binary"
         return 1
@@ -172,16 +170,18 @@ do_setup() {
     local ver="$CP_VERSION"
     if [ "$ver" = "latest" ] || [ -z "$ver" ]; then
         echo "Detecting latest version..."
-        # Fetch latest version from GitHub API
-        ver=$(curl -sL "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+        ver=$(curl -sL --max-time 10 "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | cut -d'"' -f4)
         if [ -z "$ver" ]; then
             ver="pro-v5.3.3"
+            echo "Version API unavailable, using default: $ver"
+        else
+            echo "Latest version: $ver"
         fi
-        echo "Latest version: $ver"
     fi
 
     # Download binary
-    local download_url=$(get_download_url "$ver" "$CP_ARCH")
+    local download_url
+    download_url=$(get_download_url "$ver" "$CP_ARCH")
     download_binary "$download_url" "$cp_binary" || exit 1
 
     # Get actual version
