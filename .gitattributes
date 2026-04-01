@@ -1,0 +1,10 @@
+# Force LF line endings for all text files
+* text=auto
+
+# Explicitly force LF for shell scripts and Lua files
+*.sh text eol=lf
+*.lua text eol=lf
+*.htm text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+Makefile text eol=lf

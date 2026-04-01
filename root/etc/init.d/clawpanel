@@ -1,4 +1,4 @@
-﻿#!/bin/sh /etc/rc.common
+#!/bin/sh /etc/rc.common
 # luci-app-clawpanel - procd init script for ClawPanel
 
 USE_PROCD=1

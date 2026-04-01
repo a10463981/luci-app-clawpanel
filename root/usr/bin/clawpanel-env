@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 # clawpanel-env - auto install ClawPanel from GitHub releases
 # Env vars:
 #   CP_BASE_PATH      installation base path
