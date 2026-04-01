@@ -143,31 +143,22 @@ function doInstall() {
     if (path === '/' || path.indexOf('/overlay') === 0 || path.indexOf('/proc') === 0 || path.indexOf('/sys') === 0 || path.indexOf('/dev') === 0 || path.indexOf('/etc') === 0) {
         alert('系统路径被禁止，请使用外置存储路径'); return;
     }
-    showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...<br><br><span style="color:#888">请稍候，安装完成后将自动刷新。</span>');
-    // Navigate after showing modal
-    var url = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
-    setTimeout(function() {
-        window.location.href = url;
-    }, 100);
+    showModal('正在安装 ClawPanel...', '安装进行中...', '正在提交安装任务...');
+    // Fire-and-forget using Image object - no page navigation
+    var img = new Image();
+    img.src = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
     var poll = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
+            $('cp-modal-content').innerHTML = (d.log || '等待日志...').replace(/\n/g, '<br>');
             if (d.state === 'success') {
                 clearInterval(poll);
-                var p2 = setInterval(function() {
-                    xhr(BASE + '/status_api', function(s) {
-                        if (s.panel_running) {
-                            clearInterval(p2);
-                            showModal('安装成功！', '完成', 'ClawPanel 已安装并正在运行。<br>点击"关闭"返回状态面板。');
-                        }
-                    });
-                }, 3000);
-                setTimeout(function() { clearInterval(p2); showModal('安装完成', '请刷新', '安装已完成，请手动刷新查看状态。'); }, 60000);
+                showModal('安装成功！', '完成', 'ClawPanel 已安装完成。<br>点击"关闭"刷新状态面板。');
             } else if (d.state === 'failed') {
                 clearInterval(poll);
-                showModal('安装失败', '错误', '退出码: ' + d.exit_code + '<br>' + (d.log || '').slice(-500));
+                showModal('安装失败', '错误', '退出码: ' + d.exit_code + '<br>' + (d.log || '').slice(-1000).replace(/\n/g, '<br>'));
             }
         });
-    }, 3000);
+    }, 2500);
 }
 
 function doSvc(action) {
