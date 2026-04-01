@@ -135,21 +135,27 @@ do_setup() {
     local cp_data="${cp_install_path}/data"
     local cp_binary="${cp_install_path}/clawpanel"
     local cp_port="${CP_PORT:-19527}"
-    local openclaw_dir="${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
+    local openclaw_dir="${CP_OPENCLAW_DIR:-${cp_data}}"
+    local openclaw_app="${CP_OPENCLAW_APP:-${CP_BASE_PATH}/clawpanel/app}"
+    local openclaw_work="${CP_OPENCLAW_WORK:-${CP_BASE_PATH}/clawpanel/work}"
 
     echo "=== ClawPanel Setup ==="
     echo "Install path: $cp_install_path"
     echo "Data path: $cp_data"
     echo "OpenClaw data path: $openclaw_dir"
+    echo "OpenClaw app path: $openclaw_app"
+    echo "OpenClaw work path: $openclaw_work"
     echo "Port: $cp_port"
     echo "Architecture: $CP_ARCH"
 
     check_disk "$CP_BASE_PATH" 100 || exit 1
-    mkdir -p "$CP_BASE_PATH" "$cp_install_path" "$cp_data" "$openclaw_dir"
+    mkdir -p "$CP_BASE_PATH" "$cp_install_path" "$cp_data" "$openclaw_dir" "$openclaw_app" "$openclaw_work"
     echo "Directories created:"
     echo "  - $CP_BASE_PATH"
     echo "  - $cp_data"
     echo "  - $openclaw_dir"
+    echo "  - $openclaw_app"
+    echo "  - $openclaw_work"
 
     echo "Detecting latest pro version..."
     local version
@@ -163,11 +169,28 @@ do_setup() {
     local actual_ver
     actual_ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "$version")
     echo "$actual_ver" > "${cp_install_path}/.version"
-    if [ -n "$CP_OPENCLAW_DIR" ]; then
-        echo "$CP_OPENCLAW_DIR" > "${cp_install_path}/.openclaw_path"
-    fi
 
     setup_uci "$CP_BASE_PATH" "$cp_port" "$actual_ver"
+    uci set clawpanel.main.openclaw_dir="$openclaw_dir"
+    uci commit clawpanel
+
+    # 先生成/修正 clawpanel.json，避免程序默认写回 /root 路径
+    local json_file="${cp_data}/clawpanel.json"
+    cat > "$json_file" <<EOF
+{
+  "port": ${cp_port},
+  "dataDir": "${cp_data}",
+  "openClawDir": "${openclaw_dir}",
+  "openClawApp": "${openclaw_app}",
+  "openClawWork": "${openclaw_work}",
+  "edition": "pro",
+  "jwtSecret": "clawpanel-secret-change-me",
+  "adminToken": "clawpanel",
+  "debug": false
+}
+EOF
+
+    echo "Wrote config: $json_file"
 
     echo "Starting ClawPanel..."
     /etc/init.d/clawpanel enable 2>/dev/null || true
@@ -176,6 +199,9 @@ do_setup() {
     echo "ClawPanel installation successful!"
     echo "Installed at: $cp_binary"
     echo "Data at: $cp_data"
+    echo "OpenClaw at: $openclaw_dir"
+    echo "App at: $openclaw_app"
+    echo "Work at: $openclaw_work"
     echo "Port: $cp_port"
 }
 

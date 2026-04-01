@@ -18,7 +18,8 @@ ucidef_set() {
 
 # 默认值
 uci set clawpanel.main.enabled='0'
-uci set clawpanel.main.install_path='/opt'
+uci set clawpanel.main.install_path='/mnt/sda1'
+uci set clawpanel.main.openclaw_dir='/mnt/sda1/clawpanel/data'
 uci set clawpanel.main.port='19527'
 uci set clawpanel.main.edition='pro'
 uci set clawpanel.main.auto_start='1'

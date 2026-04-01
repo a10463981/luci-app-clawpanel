@@ -16,11 +16,11 @@ CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
 CP_DATA="${CP_INSTALL_PATH}/data"
 CP_BIN="${CP_INSTALL_PATH}/clawpanel"
 
-# ── OpenClaw 数据目录（优先从 UCI 读取，否则使用默认）──
-# 从 UCI 读取 openclaw_dir；如果为空，则默认使用 $CP_DATA/.openclaw
+# ── OpenClaw 数据目录（优先从 UCI 读取，否则使用统一默认）──
+# 统一默认到安装目录下，禁止回落到 /root/.openclaw
 CP_OPENCLAW_DIR="$(uci -q get clawpanel.main.openclaw_dir || echo '')"
 if [ -z "$CP_OPENCLAW_DIR" ]; then
-	CP_OPENCLAW_DIR="${CP_DATA}/.openclaw"
+	CP_OPENCLAW_DIR="${CP_DATA}"
 fi
 
 # ── OverlayFS 兼容性修复 ──
