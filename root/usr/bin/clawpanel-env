@@ -1,279 +1,168 @@
 #!/bin/sh
-# clawpanel-env - ClawPanel installation script
+# clawpanel-env - auto install ClawPanel from GitHub releases
 # Env vars:
-#   CP_BASE_PATH      - installation base path (e.g. /mnt/sda1)
-#   CP_VERSION       - version to install (e.g. pro-v5.3.3), empty = detect
-#   CP_OPENCLAW_DIR  - OpenClaw data directory
+#   CP_BASE_PATH      installation base path, default /mnt/sda1
+#   CP_VERSION        optional fixed version like pro-v5.3.3; empty/latest = detect latest pro
+#   CP_OPENCLAW_DIR   optional OpenClaw data dir
 
 set -e
 
 CP_BASE_PATH="${CP_BASE_PATH:-/mnt/sda1}"
-CP_VERSION="${CP_VERSION:-}"
+CP_VERSION="${CP_VERSION:-latest}"
 CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-}"
 
-# Check if running as root
-if [ "$(id -u)" != "0" ]; then
-    echo "Error: This script must be run as root"
-    exit 1
-fi
+[ "$(id -u)" = "0" ] || { echo "Error: must run as root"; exit 1; }
 
 get_arch() {
-    local arch=$(uname -m)
-    case $arch in
-        aarch64) echo "arm64" ;;
-        armv7l)  echo "armv7" ;;
-        armv6l)  echo "armv6" ;;
-        x86_64)  echo "amd64" ;;
+    case "$(uname -m)" in
+        aarch64|arm64) echo "arm64" ;;
+        x86_64) echo "amd64" ;;
+        armv7l|armv7) echo "armv7" ;;
+        armv6l|armv6) echo "armv6" ;;
         i386|i686) echo "amd64" ;;
         *) echo "" ;;
     esac
 }
 
-CP_ARCH=$(get_arch)
-[ -z "$CP_ARCH" ] && { echo "Error: Unsupported architecture: $(uname -m)"; exit 1; }
+CP_ARCH="$(get_arch)"
+[ -n "$CP_ARCH" ] || { echo "Error: unsupported arch: $(uname -m)"; exit 1; }
 
 check_disk() {
     local path="$1"
     local needed_mb="${2:-100}"
     if [ -d "$path" ]; then
-        local avail_mb=$(df -m "$path" 2>/dev/null | tail -1 | awk '{print $4}')
+        local avail_mb
+        avail_mb=$(df -m "$path" 2>/dev/null | tail -1 | awk '{print $4}')
         if [ -n "$avail_mb" ] && [ "$avail_mb" -lt "$needed_mb" ]; then
-            echo "Error: Not enough disk space. Available: ${avail_mb}MB, needed: ${needed_mb}MB"
+            echo "Error: not enough disk space. Available ${avail_mb}MB, need ${needed_mb}MB"
             return 1
         fi
     fi
 }
 
-create_dirs() {
-    mkdir -p "$1" "$2" "$3"
-    echo "Directories:"
-    echo "  $1"
-    echo "  $2"
-    echo "  $3"
-}
-
-# Check if a file is a valid ELF binary
 is_elf() {
     [ -f "$1" ] || return 1
     local first4
-    first4=$(od -A n -t x1 -N 4 "$1" 2>/dev/null)
-    first4=$(echo "$first4" | tr -d ' \n\r')
+    first4=$(od -A n -t x1 -N 4 "$1" 2>/dev/null | tr -d ' \n\r')
     [ "$first4" = "7f454c46" ]
 }
 
-# Find any ELF binary in install dir or /tmp (for manual upload detection)
-find_elf_binary() {
-    local dir="$1"
-    # Scan: final destination, install dir, and /tmp
-    local search_paths="$dir/clawpanel $dir /tmp /tmp/clawpanel_bin_$$"
-    for d in $dir /tmp; do
-        for f in "$d"/clawpanel* "$d"/clawpanel; do
-            [ -f "$f" ] || continue
-            is_elf "$f" && echo "$f" && return 0
-        done
-    done
-    # Also check the temp download file from curl
-    if [ -f "/tmp/clawpanel_bin_$$" ] && is_elf "/tmp/clawpanel_bin_$$"; then
-        echo "/tmp/clawpanel_bin_$$"
-        return 0
-    fi
-    return 1
-}
-
-# Build download URL
-get_url() {
-    local ver="$1"
-    local arch="$2"
-    # "pro-v5.3.3" → filename "clawpanel-v5.3.3-linux-arm64"
-    local ver_stripped=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/;s/^v\([0-9]\)/v\1/')
-    echo "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${ver_stripped}-linux-${arch}"
-}
-
-# Determine version tag
-get_version() {
+get_latest_pro_version() {
     if [ -n "$CP_VERSION" ] && [ "$CP_VERSION" != "latest" ]; then
         printf '%s' "$CP_VERSION"
         return
     fi
     local ver
-    ver=$(curl -sL --max-time 8 \
-        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null \
-        | grep '"tag_name"' | head -10 | cut -d'"' -f4 \
-        | grep '^pro-' | head -1 || echo "")
-    if [ -z "$ver" ] || ! echo "$ver" | grep -q '^pro-'; then
+    ver=$(curl -sL --max-time 10 "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null \
+        | grep '"tag_name"' | cut -d'"' -f4 | grep '^pro-' | head -1 || true)
+    if [ -z "$ver" ]; then
         printf '%s' "pro-v5.3.3"
     else
         printf '%s' "$ver"
     fi
 }
 
-# Download binary to temp location first, then move to final
+get_download_url() {
+    local ver="$1"
+    local arch="$2"
+    local file_ver
+    file_ver=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/')
+    printf '%s' "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${file_ver}-linux-${arch}"
+}
+
 download_binary() {
     local url="$1"
     local dest="$2"
-    local tmpfile="/tmp/clawpanel_bin_$$"
+    local tmpfile="/tmp/clawpanel_download_$$"
+    echo "Downloading from: $url"
 
-    echo "Downloading: $url"
     local http_code
-    http_code=$(curl -sL -o "$tmpfile" -w "%{http_code}" --fail --location-timeout 120 "$url" 2>/dev/null)
+    http_code=$(curl -sL --fail --connect-timeout 15 --max-time 1800 -o "$tmpfile" -w "%{http_code}" "$url" 2>/dev/null || true)
     if [ "$http_code" != "200" ]; then
         rm -f "$tmpfile"
-        echo "Error: Download failed (HTTP $http_code)"
+        echo "Error: download failed (HTTP ${http_code:-unknown})"
         return 1
     fi
-    local fsize=$(wc -c < "$tmpfile" 2>/dev/null || echo "0")
+
+    local fsize
+    fsize=$(wc -c < "$tmpfile" 2>/dev/null || echo 0)
     if [ -z "$fsize" ] || [ "$fsize" -lt 5000000 ]; then
         rm -f "$tmpfile"
-        echo "Error: Downloaded file too small (${fsize} bytes)"
+        echo "Error: downloaded file too small (${fsize} bytes)"
         return 1
     fi
+
     if ! is_elf "$tmpfile"; then
         rm -f "$tmpfile"
-        echo "Error: Downloaded file is not a valid ELF binary"
+        echo "Error: downloaded file is not a valid ELF binary"
         return 1
     fi
-    chmod +x "$tmpfile"
-    # Move from /tmp to final destination
+
     mv -f "$tmpfile" "$dest"
+    chmod +x "$dest"
     echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') → $dest"
-}
-
-# Print manual download instructions
-show_manual_instructions() {
-    local version="$1"
-    local arch="$2"
-    local install_path="$3"
-    local ver_stripped=$(echo "$version" | sed 's/^pro-v/v/;s/^lite-v/v/;s/^v\([0-9]\)/v\1/')
-    local download_url="https://github.com/zhaoxinyi02/ClawPanel/releases/download/${version}/clawpanel-${ver_stripped}-linux-${arch}"
-
-    echo ""
-    echo "========================================"
-    echo "  ClawPanel 手动下载说明"
-    echo "========================================"
-    echo ""
-    echo "1. 在能访问 GitHub 的设备上（如电脑），下载以下文件："
-    echo ""
-    echo "   下载地址："
-    echo "   $download_url"
-    echo ""
-    echo "   注意：请下载与您路由器架构匹配的文件"
-    echo "   当前架构：$arch"
-    echo "   建议版本：$version"
-    echo ""
-    echo "2. 通过 scp / U盘 / SFTP 等方式上传到路由器"
-    echo ""
-    echo "   上传路径："
-    echo "   $install_path/clawpanel"
-    echo ""
-    echo "   （文件名必须是 clawpanel，不带版本号）"
-    echo ""
-    echo "3. 上传完成后，给文件执行权限："
-    echo "   chmod +x $install_path/clawpanel"
-    echo ""
-    echo "4. 再次运行此脚本即可完成安装："
-    echo "   /usr/bin/clawpanel-env setup"
-    echo ""
-    echo "========================================"
-    echo ""
 }
 
 setup_uci() {
     local install_path="$1"
-    local port="${2:-19527}"
+    local port="$2"
     local version="$3"
     uci set clawpanel.main.enabled='1'
     uci set clawpanel.main.install_path="$install_path"
     uci set clawpanel.main.port="$port"
     uci set clawpanel.main.version="$version"
+    if [ -n "$CP_OPENCLAW_DIR" ]; then
+        uci set clawpanel.main.openclaw_dir="$CP_OPENCLAW_DIR"
+    fi
     uci commit clawpanel
 }
 
 do_setup() {
     local cp_install_path="${CP_BASE_PATH}/clawpanel"
-    local cp_data="${CP_BASE_PATH}/clawpanel/data"
+    local cp_data="${cp_install_path}/data"
     local cp_binary="${cp_install_path}/clawpanel"
     local cp_port="${CP_PORT:-19527}"
     local openclaw_dir="${CP_OPENCLAW_DIR:-${cp_data}/.openclaw}"
 
     echo "=== ClawPanel Setup ==="
     echo "Install path: $cp_install_path"
+    echo "Data path: $cp_data"
+    echo "OpenClaw data path: $openclaw_dir"
+    echo "Port: $cp_port"
     echo "Architecture: $CP_ARCH"
 
     check_disk "$CP_BASE_PATH" 100 || exit 1
-    create_dirs "$CP_BASE_PATH" "$cp_data" "$openclaw_dir"
+    mkdir -p "$CP_BASE_PATH" "$cp_install_path" "$cp_data" "$openclaw_dir"
+    echo "Directories created:"
+    echo "  - $CP_BASE_PATH"
+    echo "  - $cp_data"
+    echo "  - $openclaw_dir"
 
-    local version
     echo "Detecting latest pro version..."
-    version=$(get_version)
+    local version
+    version=$(get_latest_pro_version)
     echo "Using version: $version"
 
-    # Step 1: Check if main binary exists and is valid
-    if is_elf "$cp_binary"; then
-        local ver
-        ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "unknown")
-        echo "Found: $cp_binary (version: $ver)"
-        echo "Skipping download."
-    else
-        # Step 2: Look for any uploaded ELF file in install dir
-        echo "Main binary not found, scanning for uploaded file..."
-        local found
-        found=$(find_elf_binary "$cp_install_path" || true)
-        if [ -n "$found" ]; then
-            echo "Found uploaded file: $found"
-            if [ "$found" != "$cp_binary" ]; then
-                mv "$found" "$cp_binary"
-                chmod +x "$cp_binary"
-                echo "Renamed to: $cp_binary"
-            fi
-        else
-            # Step 3: Try GitHub download
-            echo "No uploaded file found in /tmp or install dir."
-            echo "Trying GitHub..."
-            local url
-            url=$(get_url "$version" "$CP_ARCH")
-            if download_binary "$url" "$cp_binary"; then
-                echo "Download successful."
-            else
-                # Step 4: GitHub failed - show manual instructions
-                show_manual_instructions "$version" "$CP_ARCH" "$cp_install_path"
-                exit 1
-            fi
-        fi
-    fi
-
-    # Verify final binary
-    if ! is_elf "$cp_binary"; then
-        echo "Error: $cp_binary is not a valid ELF binary"
-        exit 1
-    fi
-    chmod +x "$cp_binary"
+    local url
+    url=$(get_download_url "$version" "$CP_ARCH")
+    download_binary "$url" "$cp_binary" || exit 1
 
     local actual_ver
     actual_ver=$("$cp_binary" --version 2>/dev/null | head -1 || echo "$version")
-    echo "Binary version: $actual_ver"
     echo "$actual_ver" > "${cp_install_path}/.version"
-
-    # Save OpenClaw data path
     if [ -n "$CP_OPENCLAW_DIR" ]; then
         echo "$CP_OPENCLAW_DIR" > "${cp_install_path}/.openclaw_path"
-        uci set clawpanel.main.openclaw_dir="$CP_OPENCLAW_DIR" 2>/dev/null
-        uci commit clawpanel 2>/dev/null
-        echo "OpenClaw data path: $CP_OPENCLAW_DIR"
     fi
 
-    # Save UCI config
     setup_uci "$CP_BASE_PATH" "$cp_port" "$actual_ver"
 
-    # Start service
     echo "Starting ClawPanel..."
-    /etc/init.d/clawpanel enable 2>/dev/null
-    /etc/init.d/clawpanel start >/dev/null 2>&1
+    /etc/init.d/clawpanel enable 2>/dev/null || true
+    /etc/init.d/clawpanel start >/dev/null 2>&1 || true
 
-    echo ""
-    echo "=== Installation Complete ==="
-    echo "Binary: $cp_binary"
-    echo "Data: $cp_data"
-    echo "OpenClaw: $openclaw_dir"
+    echo "ClawPanel installation successful!"
+    echo "Installed at: $cp_binary"
+    echo "Data at: $cp_data"
     echo "Port: $cp_port"
 }
 
