@@ -1,4 +1,4 @@
-#!/bin/sh /etc/rc.common
+﻿#!/bin/sh /etc/rc.common
 # luci-app-clawpanel - procd init script for ClawPanel
 
 USE_PROCD=1
@@ -8,7 +8,7 @@ STOP=10
 EXTRA_COMMANDS="setup status_service"
 EXTRA_HELP="    setup            install ClawPanel\n    status_service   show service status"
 
-# ── read UCI config (called each time start_service runs) ──────────────────────
+# 鈹€鈹€ read UCI config (called each time start_service runs) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 _load_uci() {
     CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '')"
     if [ -z "$CP_BASE_PATH" ] || [ "${CP_BASE_PATH#/}" = "$CP_BASE_PATH" ]; then
@@ -46,6 +46,22 @@ start_service() {
 
     mkdir -p "$CP_DATA" "$CP_OPENCLAW_DIR" 2>/dev/null
 
+    # Ensure clawpanel.json has correct paths BEFORE ClawPanel starts.
+    # ClawPanel may regenerate this file on first boot, so write it now.
+    cat > "$CP_DATA/clawpanel.json" <<'JEOF'
+{
+  "port": ${port},
+  "dataDir": "${CP_DATA}",
+  "openClawDir": "${CP_OPENCLAW_DIR}",
+  "openClawApp": "${CP_INSTALL_PATH}/app",
+  "openClawWork": "${CP_INSTALL_PATH}/work",
+  "edition": "pro",
+  "jwtSecret": "clawpanel-secret-change-me",
+  "adminToken": "clawpanel",
+  "debug": false
+}
+JEOF
+
     port=$(echo "$port" | tr -cd '0-9')
     [ -z "$port" ] && port=19527
 
@@ -70,7 +86,7 @@ start_service() {
         cp_ver=$(cat "${CP_INSTALL_PATH}/.version" 2>/dev/null | tr -d '[:space:]')
     fi
     [ -z "$cp_ver" ] && cp_ver="5.3.3"
-    # Strip edition prefix: pro-v5.3.3 → 5.3.3
+    # Strip edition prefix: pro-v5.3.3 鈫?5.3.3
     cp_ver=$(echo "$cp_ver" | sed 's/^pro-v//;s/^lite-v//')
 
     echo "Starting ClawPanel: $CP_BIN --updater-standalone $cp_ver $CP_DATA $port $CP_OPENCLAW_DIR"
