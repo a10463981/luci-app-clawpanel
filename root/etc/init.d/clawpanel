@@ -1,4 +1,4 @@
-#!/bin/sh /etc/rc.common
+﻿#!/bin/sh /etc/rc.common
 # luci-app-clawpanel - procd init script for ClawPanel
 
 USE_PROCD=1
@@ -8,7 +8,7 @@ STOP=10
 EXTRA_COMMANDS="setup status_service"
 EXTRA_HELP="    setup            install ClawPanel\n    status_service   show service status"
 
-# 鈹€鈹€ read UCI config (called each time start_service runs) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# 閳光偓閳光偓 read UCI config (called each time start_service runs) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 _load_uci() {
     CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '')"
     if [ -z "$CP_BASE_PATH" ] || [ "${CP_BASE_PATH#/}" = "$CP_BASE_PATH" ]; then
@@ -20,7 +20,7 @@ _load_uci() {
     CP_BIN="${CP_INSTALL_PATH}/clawpanel"
     CP_OPENCLAW_DIR="$(uci -q get clawpanel.main.openclaw_dir || echo '')"
     if [ -z "$CP_OPENCLAW_DIR" ] || [ "${CP_OPENCLAW_DIR#/}" = "$CP_OPENCLAW_DIR" ]; then
-        CP_OPENCLAW_DIR="${CP_DATA}"
+        CP_OPENCLAW_DIR="${CP_BASE_PATH}/.openclaw"
     fi
     return 0
 }
@@ -86,7 +86,7 @@ JEOF
         cp_ver=$(cat "${CP_INSTALL_PATH}/.version" 2>/dev/null | tr -d '[:space:]')
     fi
     [ -z "$cp_ver" ] && cp_ver="5.3.3"
-    # Strip edition prefix: pro-v5.3.3 鈫?5.3.3
+    # Strip edition prefix: pro-v5.3.3 閳?5.3.3
     cp_ver=$(echo "$cp_ver" | sed 's/^pro-v//;s/^lite-v//')
 
     echo "Starting ClawPanel: $CP_BIN --updater-standalone $cp_ver $CP_DATA $port $CP_OPENCLAW_DIR"
