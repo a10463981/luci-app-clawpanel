@@ -95,11 +95,11 @@ function action_status()
 	if result.panel_running and result.pid and result.pid ~= "" then
 		local pid_num = tonumber(result.pid)
 		if pid_num and pid_num > 0 then
-			local rss_raw = trim(sh("cat /proc/" .. result.pid .. "/status 2>/dev/null | grep VmRSS | awk '{print $2}'"))
-			local ok, rss_val = pcall(tonumber, rss_raw)
-			result.memory_kb = (ok and rss_val) and rss_val or 0
+			local rss_raw = trim(sh("awk '/VmRSS/{print $2}' /proc/" .. result.pid .. "/status 2>/dev/null"))
+			local ok1, rss_val = pcall(function() return tonumber(rss_raw) end)
+			result.memory_kb = (ok1 and rss_val) and rss_val or 0
 			local ts_raw = trim(sh("stat -c %Y /proc/" .. result.pid .. "/status 2>/dev/null"))
-			local ok2, ts_val = pcall(tonumber, ts_raw)
+			local ok2, ts_val = pcall(function() return tonumber(ts_raw) end)
 			if ok2 and ts_val and ts_val > 0 then
 				local up = os.time() - ts_val
 				local h = math.floor(up / 3600)
@@ -263,7 +263,8 @@ function action_setup_log()
 		if ef then
 			local code = trim(ef:read("*a"))
 			ef:close()
-			exit_code = tonumber(code) or -1
+			local ok_exit, exit_code = pcall(function() return tonumber(code) end)
+		exit_code = (ok_exit and exit_code) and exit_code or -1
 		end
 	end
 
