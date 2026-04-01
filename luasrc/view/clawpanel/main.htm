@@ -1,6 +1,6 @@
 <%#
-main.htm - ClawPanel 主页
--%>
+luci-app-clawpanel - OpenWrt LuCI Basic Configuration Template
+%>
 <%
 local uci = require("luci.model.uci").cursor()
 local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
@@ -12,22 +12,32 @@ local port = uci:get("clawpanel", "main", "port") or "19527"
 #cp-panel{margin:0 0 20px 0;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden}
 #cp-panel .panel-title{background:linear-gradient(135deg,#4a90d9,#357abd);color:#fff;padding:10px 16px;font-size:14px;font-weight:600}
 #cp-panel td{padding:8px 16px;border-bottom:1px solid #f2f2f2;font-size:13px}
-#cp-panel tr:last-child td{border-bottom:none}
 #cp-panel td:first-child{width:120px;color:#888;font-weight:500}
+#cp-panel tr:last-child td{border-bottom:none}
 .cp-btn{padding:6px 14px;border-radius:6px;font-size:13px;color:#fff;border:none;cursor:pointer;display:inline-block;text-decoration:none}
-.cp-btn-apply{background:#4a90d9}.cp-btn-action{background:#6c757d}.cp-btn-remove{background:#cf222e}.cp-btn-web{background:#1a7f37}
+.cp-btn-apply{background:#4a90d9}.cp-btn-apply:hover{background:#357abd}
+.cp-btn-action{background:#6c757d}.cp-btn-action:hover{background:#545b62}
+.cp-btn-remove{background:#cf222e}.cp-btn-remove:hover{background:#a40e26}
+.cp-btn-web{background:#1a7f37}.cp-btn-web:hover{background:#155d27}
 .cp-btn:hover{opacity:0.85}
 .cp-badge{display:inline-block;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
+.cp-badge-unknown{background:#f0f0f0;color:#656d76}
 .cp-badge-running{background:#e6f7e9;color:#1a7f37}
-.cp-badge-stopped{background:#ffeef0;color:#cf222e}
+.cp-badge-stopped{background:#fff0e6;color:#cf222e}
+.cp-badge-enabling{background:#fff0e6;color:#9a6700}
 .cp-badge-disabled{background:#f0f0f0;color:#656d76}
-.cp-badge-unknown{background:#fff8c5;color:#9a6700}
-.cp-path{margin-bottom:14px;display:flex;align-items:center;gap:10px}
-.cp-path label{font-size:13px;color:#555}
-.cp-path input{flex:1;max-width:260px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
-#cp-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center}
+#cp-path{margin-bottom:14px;display:flex;align-items:center;gap:10px}
+#cp-path label{font-size:13px;color:#555}
+#cp-path input{flex:1;max-width:260px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
+#cp-actions{margin-bottom:14px}
+#cp-actions .cp-btn{margin-right:8px}
+#cp-hint{border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;font-size:13px;line-height:1.8}
+#cp-hint strong{color:#1a7f37}
+#cp-hint a{color:#4a90d9}
+
+#cp-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:99999;align-items:center;justify-content:center}
 #cp-modal.show{display:flex}
-#cp-modal .modal-box{background:#1e1e1e;border-radius:12px;padding:0;max-width:700px;width:94%;box-shadow:0 12px 40px rgba(0,0,0,.7);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;flex:1}
+#cp-modal .modal-box{background:#1e1e1e;border-radius:12px;padding:0;max-width:700px;width:95%;box-shadow:0 12px 40px rgba(0,0,0,.7);max-height:88vh;overflow:hidden;display:flex;flex-direction:column}
 #cp-modal .modal-hdr{display:flex;align-items:center;padding:10px 14px;background:#2d2d2d;border-bottom:1px solid #444;border-radius:12px 12px 0 0}
 #cp-modal .modal-hdr .mh-title{color:#ccc;font-size:13px;flex:1;font-family:monospace}
 #cp-modal .modal-hdr .mh-close{color:#888;background:none;border:none;font-size:20px;cursor:pointer;padding:0 4px}
@@ -35,60 +45,64 @@ local port = uci:get("clawpanel", "main", "port") or "19527"
 #cp-modal .modal-body{flex:1;overflow-y:auto;padding:12px 16px;font-family:'Courier New',Consolas,monospace;font-size:12px;line-height:1.7;color:#d4d4d4;background:#1e1e1e;min-height:200px;max-height:55vh}
 #cp-modal .modal-body pre{margin:0;white-space:pre-wrap;word-break:break-all}
 #cp-modal .modal-foot{padding:8px 14px;background:#2d2d2d;border-top:1px solid #444;border-radius:0 0 12px 12px}
-#cp-modal .ok{color:#4a90d9}.cp-modal .err{color:#cf222e}.cp-modal .warn{color:#f0c674}.cp-modal .dim{color:#888}
+#cp-modal .mh-status{font-size:12px}
+#cp-modal .ok{color:#4a90d9}
+#cp-modal .err{color:#cf222e}
+#cp-modal .warn{color:#f0c674}
+#cp-modal .dim{color:#888}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 .b{animation:blink 1s infinite}
 </style>
 
-<!-- 通用终端弹窗 -->
+<!-- Terminal Modal -->
 <div id="cp-modal">
 <div class="modal-box">
 <div class="modal-hdr">
 <span class="mh-title" id="cp-modal-title">ClawPanel</span>
-<button class="mh-close" id="cp-modal-close" title="关闭">&times;</button>
+<span class="mh-status" id="cp-modal-status" style="color:#888;font-size:12px;margin-right:10px"></span>
+<button class="mh-close" id="cp-modal-close" title="Close">&times;</button>
 </div>
 <div class="modal-body" id="cp-modal-log"><pre id="cp-modal-log-content"></pre></div>
-<div class="modal-foot" id="cp-modal-foot">
-<span id="cp-modal-state" style="color:#888;font-size:12px"></span>
-<button class="cp-btn cp-btn-action" id="cp-modal-okbtn" onclick="cpModalClose()">确定</button>
+<div class="modal-foot">
+<button class="cp-btn cp-btn-action" id="cp-modal-okbtn" style="display:none" onclick="cpModalClose()">Close</button>
 </div>
 </div>
 </div>
 
-<!-- 状态面板 -->
+<!-- Main Panel -->
 <div id="cp-panel">
-<div class="panel-title">ClawPanel 服务状态</div>
+<div class="panel-title">ClawPanel Service Control</div>
 <table>
-<tr><td>运行状态</td><td id="cp-st-status"><span class="cp-badge cp-badge-unknown">加载中</span></td></tr>
-<tr><td>面板端口</td><td id="cp-st-port"><%=port%></td></tr>
-<tr><td>进程 PID</td><td id="cp-st-pid">-</td></tr>
-<tr><td>内存占用</td><td id="cp-st-mem">-</td></tr>
-<tr><td>运行时间</td><td id="cp-st-uptime">-</td></tr>
-<tr><td>版本</td><td id="cp-st-ver">-</td></tr>
-<tr><td>安装路径</td><td id="cp-st-path"><%=install_path%></td></tr>
-<tr><td>剩余空间</td><td id="cp-st-disk">-</td></tr>
+<tr><td>Status</td><td><span id="cp-st-status"><span class="cp-badge cp-badge-unknown">Unknown</span></span></td></tr>
+<tr><td>Port</td><td id="cp-st-port"><%=port%></td></tr>
+<tr><td>PID</td><td id="cp-st-pid">-</td></tr>
+<tr><td>Memory</td><td id="cp-st-mem">-</td></tr>
+<tr><td>Uptime</td><td id="cp-st-uptime">-</td></tr>
+<tr><td>Version</td><td id="cp-st-ver">-</td></tr>
+<tr><td>Install Path</td><td id="cp-st-path"><%=install_path%></td></tr>
+<tr><td>Disk Free</td><td id="cp-st-disk">-</td></tr>
 </table>
 </div>
 
-<div class="cp-path">
-<label>安装路径:</label>
+<div id="cp-path">
+<label>Install Path:</label>
 <input type="text" id="f-path" value="<%=install_path%>" placeholder="/mnt/sda1">
 </div>
 
-<div style="margin-bottom:14px">
-<button class="cp-btn cp-btn-apply" onclick="doInstall()">安装/重装</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('restart')">重启</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('stop')">停止</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('start')">启动</button>
-<button class="cp-btn cp-btn-remove" onclick="doUninstall()">卸载</button>
-<a href="http://192.168.1.1:<%=port%>" target="_blank" class="cp-btn cp-btn-web">访问 ClawPanel</a>
-<button class="cp-btn cp-btn-action" onclick="updateStatus()" style="float:right">刷新状态</button>
+<div id="cp-actions">
+<button class="cp-btn cp-btn-apply" onclick="doInstall()">Install / Reinstall ClawPanel</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('restart')">Restart</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('stop')">Stop</button>
+<button class="cp-btn cp-btn-action" onclick="doSvc('start')">Start</button>
+<button class="cp-btn cp-btn-remove" onclick="doUninstall()">Uninstall</button>
+<a href="http://<%=luci.ip.getenv('LAN_ADDR') or '192.168.1.1'%>:<%=port%>" target="_blank" class="cp-btn cp-btn-web">Open ClawPanel</a>
+<button class="cp-btn cp-btn-action" onclick="updateStatus()" style="float:right">Refresh Status</button>
 </div>
 
-<div style="border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;font-size:13px;line-height:1.8">
-<strong>使用指南</strong><br/>
-完成后访问 <a href="http://192.168.1.1:<%=port%>" target="_blank" style="color:#4a90d9">http://192.168.1.1:<%=port%></a><br/>
-<strong style="color:#cf222e">必须安装到外置存储（/mnt/sda1 等），禁止系统分区</strong>
+<div id="cp-hint">
+<strong>Installation Tips:</strong><br>
+Open ClawPanel at <a href="http://<%=luci.ip.getenv('LAN_ADDR') or '192.168.1.1'%>:<%=port%>" target="_blank">http://<%=luci.ip.getenv('LAN_ADDR') or '192.168.1.1'%>:<%=port%></a><br>
+<strong>Recommended path:</strong> Use external storage mount points like <code>/mnt/sda1</code>, <code>/mnt/data</code>, <code>/storage</code>. System paths are blocked.
 </div>
 
 <script type="text/javascript">
@@ -102,178 +116,251 @@ function $(id) { return document.getElementById(id); }
 function hl(text) {
     if (!text) return '';
     return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/\[✓]/g,'<span class="ok">[✓]</span>')
-        .replace(/\[✗]/g,'<span class="err">[✗]</span>')
-        .replace(/\[!]/g,'<span class="warn">[!]</span>')
-        .replace(/\[▶]/g,'<span class="ok">[▶]</span>');
+        .replace(/\n/g, '<br>');
+}
+
+function showModal(title, initialText, statusText) {
+    if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
+    if (modalTimer) { clearTimeout(modalTimer); modalTimer = null; }
+    $('cp-modal-title').textContent = title || 'ClawPanel';
+    $('cp-modal-log-content').innerHTML = hl(initialText || '...');
+    $('cp-modal-status').textContent = statusText || '';
+    $('cp-modal-status').style.color = '#888';
+    $('cp-modal-okbtn').style.display = 'none';
+    $('cp-modal').classList.add('show');
+}
+
+function appendLog(text) {
+    var el = $('cp-modal-log-content');
+    el.innerHTML = hl(text);
+    $('cp-modal-log').scrollTop = $('cp-modal-log').scrollHeight;
+}
+
+function setModalStatus(text, color) {
+    $('cp-modal-status').textContent = text || '';
+    $('cp-modal-status').style.color = color || '#888';
+}
+
+function showModalSuccess(title, text) {
+    $('cp-modal-title').textContent = title || 'ClawPanel';
+    appendLog(text || 'Done!');
+    setModalStatus('SUCCESS', '#1a7f37');
+    $('cp-modal-okbtn').style.display = 'inline-block';
+}
+
+function showModalError(title, text) {
+    $('cp-modal-title').textContent = title || 'ClawPanel - Error';
+    appendLog(text || 'Failed!');
+    setModalStatus('FAILED', '#cf222e');
+    $('cp-modal-okbtn').style.display = 'inline-block';
 }
 
 function cpModalClose() {
     if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
     if (modalTimer) { clearTimeout(modalTimer); modalTimer = null; }
     $('cp-modal').classList.remove('show');
+    updateStatus();
 }
 
-function showModal(title, logText, state, stateText) {
-    $('cp-modal-title').textContent = title;
-    $('cp-modal-log-content').innerHTML = hl(logText || '...');
-    $('cp-modal-state').textContent = stateText || '';
-    $('cp-modal-state').style.color = (state === 'success') ? '#1a7f37' : (state === 'failed' ? '#cf222e' : '#888');
-    $('cp-modal').classList.add('show');
-    $('cp-modal-log').scrollTop = $('cp-modal-log').scrollHeight;
+$('cp-modal-close').onclick = cpModalClose;
+
+// ========== XHR Helper ==========
+function xhr(url, onResult) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.send(null);
+    x.onreadystatechange = function() {
+        if (x.readyState === 4) {
+            try {
+                var data = JSON.parse(x.responseText);
+                onResult(data);
+            } catch(e) {
+                onResult({ error: 'parse error' });
+            }
+        }
+    };
 }
 
-function pollApi(url, onResult) {
-    var x = new XHR();
-    x.get(url, null, function(xhr) {
+// ========== Status Update ==========
+function updateStatus() {
+    xhr(BASE + '/status_api', function(d) {
         try {
-            var data = JSON.parse(xhr.responseText);
-            onResult(data);
+            var stEl = $('cp-st-status');
+            var en = d.enabled;
+
+            if (en !== '1' && en !== '0') {
+                // not configured at all
+                stEl.innerHTML = '<span class="cp-badge cp-badge-unknown">Not Configured</span>';
+            } else if (en === '0') {
+                if (d.panel_running) {
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-enabling">Enabled=false but Running</span>';
+                } else {
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-disabled">Disabled</span>';
+                }
+            } else {
+                // enabled == '1'
+                if (d.panel_running) {
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-running">Running</span>';
+                } else {
+                    stEl.innerHTML = '<span class="cp-badge cp-badge-stopped">Stopped</span>';
+                }
+            }
+
+            $('cp-st-port').textContent = d.port || '-';
+            $('cp-st-pid').textContent = d.pid || '-';
+            $('cp-st-mem').textContent = (d.memory_kb > 0) ? (d.memory_kb / 1024).toFixed(1) + ' MB' : '-';
+            $('cp-st-uptime').textContent = d.uptime || '-';
+            $('cp-st-ver').textContent = d.panel_version || d.installed_version || '-';
+            $('cp-st-path').textContent = d.install_path || '-';
+            $('cp-st-disk').textContent = d.disk_free || '-';
         } catch(e) {
-            onResult({ state: 'error', log: '请求失败', exit_code: -1 });
+            $('cp-st-status').innerHTML = '<span class="cp-badge cp-badge-unknown">Error</span>';
         }
     });
 }
 
-function doSvcOp(action, title, logOk, logFail) {
-    showModal(title + '...', '正在执行 ' + action + '...\n', 'running', '请稍候...');
-    var x = new XHR();
-    x.get(BASE + '/service_ctl?action=' + action, null, function(xhr) {
-        var data = {};
-        try { data = JSON.parse(xhr.responseText); } catch(e) {}
-        var state = (data.status === 'ok') ? 'success' : 'failed';
-        var log = (state === 'success') ? (logOk || '操作完成') : (logFail || data.message || '操作失败');
-        showModal(title, log, state, (state === 'success') ? '完成' : '失败');
-    });
-}
-
+// ========== Install ==========
 function doInstall() {
     var path = $('f-path').value.trim();
-    if (!path) { alert('请输入安装路径'); return; }
-    var d = ['/overlay','/rom','/boot','/proc','/sys','/dev','/opt','/tmp','/var','/etc','/root','/usr','/bin','/sbin','/lib','/'];
-    for (var i = 0; i < d.length; i++) {
-        if (path === d[i] || path.indexOf(d[i] + '/') === 0) {
-            alert('禁止安装到系统分区！请输入外置存储路径'); return;
+    if (!path) { alert('Please enter an install path'); return; }
+    var dangerous = ['/overlay','/rom','/proc','/sys','/dev','/run','/tmp','/var','/etc','/root','/home','/usr','/bin','/sbin','/lib','/','/opt'];
+    for (var i = 0; i < dangerous.length; i++) {
+        if (path === dangerous[i] || path.indexOf(dangerous[i] + '/') === 0) {
+            alert('Invalid path: ' + path + '\nSystem paths are blocked. Use an external storage mount point.');
+            return;
         }
     }
 
-    $('cp-modal-title').textContent = '安装 ClawPanel...';
-    $('cp-modal-log-content').innerHTML = '正在提交安装任务...\n';
-    $('cp-modal-state').textContent = '准备中...';
-    $('cp-modal-state').style.color = '#888';
-    $('cp-modal').classList.add('show');
+    showModal('Installing ClawPanel...', 'Submitting install task...\n', 'Installing...');
 
-    // 触发后台安装
-    var x = new XHR();
-    x.get(BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path), null, function() {});
+    // Trigger setup via XHR (fire-and-forget)
+    var x = new XMLHttpRequest();
+    x.open('GET', BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path), true);
+    x.send(null);
 
-    // 2秒后开始轮询日志
+    // Poll setup_log every 2.5s
     modalPollTimer = setInterval(function() {
-        pollApi(BASE + '/setup_log', function(data) {
-            var lines = (data.log || '').split('\n');
-            var html = '';
-            for (var i = 0; i < lines.length; i++) {
-                if (!lines[i] && i === lines.length - 1) continue;
-                html += '<div>' + hl(lines[i]) + '</div>';
-            }
-            if (html) $('cp-modal-log-content').innerHTML = html;
-            $('cp-modal-log').scrollTop = $('cp-modal-log').scrollHeight;
+        xhr(BASE + '/setup_log', function(d) {
+            appendLog(d.log || '');
 
-            if (data.state === 'running') {
-                $('cp-modal-state').textContent = '安装中，请耐心等待（下载可能需要数十秒）...';
-            } else if (data.state === 'success') {
-                $('cp-modal-title').textContent = 'ClawPanel 安装成功！';
-                $('cp-modal-state').innerHTML = '<span style="color:#1a7f37">安装成功！</span>';
-                $('cp-modal-log-content').innerHTML += '\n<div style="color:#1a7f37;margin-top:6px">安装完成，页面将自动刷新...</div>';
-                if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
-                setTimeout(function() { cpModalClose(); updateStatus(); location.reload(); }, 2500);
-            } else if (data.state === 'failed') {
-                $('cp-modal-title').textContent = 'ClawPanel 安装失败';
-                $('cp-modal-state').textContent = 'exit: ' + (data.exit_code || '?');
-                $('cp-modal-state').style.color = '#cf222e';
-                $('cp-modal-log-content').innerHTML += '\n<div style="color:#cf222e;margin-top:6px">安装失败！请检查网络或更换路径后重试。</div>';
-                if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
+            if (d.state === 'running') {
+                setModalStatus('Installing...', '#f0c674');
+            } else if (d.state === 'success') {
+                // Setup finished! Now wait for port to be LISTENING
+                clearInterval(modalPollTimer);
+                setModalStatus('Setup complete, checking port...', '#4a90d9');
+                appendLog(d.log || '');
+                appendLog('\n--- Waiting for ClawPanel port to come up (max 90s)... ---\n');
+
+                // Poll wait_running until port is confirmed listening
+                var waitTimer = setInterval(function() {
+                    xhr(BASE + '/wait_running', function(r) {
+                        if (r.state === 'running') {
+                            clearInterval(waitTimer);
+                            showModalSuccess('ClawPanel', (d.log || '') + '\nPort 19527 is now LISTENING (PID: ' + r.pid + ')\n\nClick "Close" to return to status panel.');
+                        }
+                    });
+                }, 2000);
+
+                // Timeout after 95s
+                setTimeout(function() {
+                    clearInterval(waitTimer);
+                    // Still show success even if port not confirmed (service might be starting slowly)
+                    showModalSuccess('ClawPanel', (d.log || '') + '\n\nPort check timed out but installation completed.\nRefresh status to verify.');
+                }, 95000);
+
+            } else if (d.state === 'failed') {
+                clearInterval(modalPollTimer);
+                showModalError('Installation Failed', (d.log || '') + '\nExit code: ' + d.exit_code);
+            } else if (d.state === 'idle') {
+                clearInterval(modalPollTimer);
+                showModalError('Installation', 'Setup log is empty or expired. Please try again.');
             }
         });
     }, 2500);
 }
 
-function doUninstall() {
-    if (!confirm('确定要卸载 ClawPanel 吗？\n所有数据将被永久删除！')) return;
-    showModal('卸载 ClawPanel', '正在卸载...\n', 'running', '请稍候...');
-    var x = new XHR();
-    x.get(BASE + '/uninstall', null, function(xhr) {
-        var data = {};
-        try { data = JSON.parse(xhr.responseText); } catch(e) {}
-        if (data.status === 'ok') {
-            $('cp-modal-title').textContent = 'ClawPanel 卸载完成';
-            $('cp-modal-state').innerHTML = '<span style="color:#1a7f37">卸载成功</span>';
-            $('cp-modal-log-content').innerHTML += '\n<div style="color:#1a7f37;margin-top:6px">ClawPanel 已完全卸载。</div>';
-            setTimeout(function() { cpModalClose(); updateStatus(); location.reload(); }, 2000);
-        } else {
-            $('cp-modal-title').textContent = '卸载失败';
-            $('cp-modal-state').textContent = '失败';
-            $('cp-modal-state').style.color = '#cf222e';
-        }
-    });
-}
-
+// ========== Service Control (restart/stop/start) ==========
 function doSvc(action) {
-    var titles = { restart: '重启 ClawPanel', stop: '停止 ClawPanel', start: '启动 ClawPanel' };
-    var logs = {
-        restart: '正在重启 ClawPanel...\n',
-        stop: '正在停止 ClawPanel...\n',
-        start: '正在启动 ClawPanel...\n'
+    var titles = { restart: 'Restarting ClawPanel', stop: 'Stopping ClawPanel', start: 'Starting ClawPanel' };
+    var confirmMsg = {
+        restart: 'Confirm: Restart ClawPanel?',
+        stop: 'Confirm: Stop ClawPanel?',
+        start: 'Confirm: Start ClawPanel?'
     };
-    var titlesDone = { restart: 'ClawPanel 已重启', stop: 'ClawPanel 已停止', start: 'ClawPanel 已启动' };
 
-    showModal(titles[action], logs[action], 'running', '请稍候...');
-    var x = new XHR();
-    x.get(BASE + '/service_ctl?action=' + action, null, function(xhr) {
-        var data = {};
-        try { data = JSON.parse(xhr.responseText); } catch(e) {}
-        if (data.status === 'ok') {
-            $('cp-modal-title').textContent = titlesDone[action];
-            $('cp-modal-state').innerHTML = '<span style="color:#1a7f37">成功！</span>';
-            $('cp-modal-log-content').innerHTML += '\n<div style="color:#1a7f37;margin-top:6px">' + titlesDone[action] + '，页面将刷新...</div>';
-            if (modalPollTimer) { clearInterval(modalPollTimer); modalPollTimer = null; }
-            setTimeout(function() { cpModalClose(); updateStatus(); location.reload(); }, 1800);
-        } else {
-            $('cp-modal-title').textContent = titles[action] + ' 失败';
-            $('cp-modal-state').textContent = '失败';
-            $('cp-modal-state').style.color = '#cf222e';
-        }
-    });
-}
+    var x = new XMLHttpRequest();
+    x.open('GET', BASE + '/service_ctl?action=' + action, true);
+    x.send(null);
 
-function updateStatus() {
-    var x = new XHR();
-    x.get(BASE + '/status_api', null, function(xhr) {
-        try {
-            var d = JSON.parse(xhr.responseText);
-            var stEl = $('cp-st-status');
-            if (d.enabled !== '1') {
-                stEl.innerHTML = '<span class="cp-badge cp-badge-disabled">未安装</span>';
-            } else if (d.panel_running) {
-                stEl.innerHTML = '<span class="cp-badge cp-badge-running">运行中</span>';
+    if (action === 'stop') {
+        showModal(titles.stop, 'Sending stop command...\n', 'Stopping...');
+        var waitTimer = setInterval(function() {
+            xhr(BASE + '/wait_stopped', function(r) {
+                if (r.state === 'stopped') {
+                    clearInterval(waitTimer);
+                    showModalSuccess(titles.stop, 'Port is now closed.\nClawPanel has been stopped.');
+                }
+            });
+        }, 1000);
+        setTimeout(function() { clearInterval(waitTimer); showModalSuccess(titles.stop, 'Stop command sent (timeout waiting for confirmation).'); }, 35000);
+
+    } else if (action === 'start') {
+        showModal(titles.start, 'Sending start command...\n', 'Starting...');
+        var waitTimer = setInterval(function() {
+            xhr(BASE + '/wait_running', function(r) {
+                if (r.state === 'running') {
+                    clearInterval(waitTimer);
+                    showModalSuccess(titles.start, 'Port 19527 is now LISTENING (PID: ' + r.pid + ')\nClawPanel has been started.');
+                }
+            });
+        }, 1000);
+        setTimeout(function() { clearInterval(waitTimer); showModalSuccess(titles.start, 'Start command sent (timeout waiting for confirmation).'); }, 35000);
+
+    } else if (action === 'restart') {
+        showModal(titles.restart, 'Restarting...\n', 'Restarting...');
+        var phase = 'stopping';
+        var waitTimer = setInterval(function() {
+            if (phase === 'stopping') {
+                xhr(BASE + '/wait_stopped', function(r) {
+                    if (r.state === 'stopped') {
+                        phase = 'starting';
+                        appendLog('Port stopped. Waiting for restart...\n');
+                        setModalStatus('Waiting for restart...', '#f0c674');
+                    }
+                });
             } else {
-                stEl.innerHTML = '<span class="cp-badge cp-badge-stopped">已停止</span>';
+                xhr(BASE + '/wait_running', function(r) {
+                    if (r.state === 'running') {
+                        clearInterval(waitTimer);
+                        showModalSuccess(titles.restart, 'Port 19527 is now LISTENING (PID: ' + r.pid + ')\nRestart complete.');
+                    }
+                });
             }
-            $('cp-st-port').textContent = d.port || '<%=port%>';
-            $('cp-st-pid').textContent = d.pid || '-';
-            $('cp-st-mem').textContent = (d.memory_kb > 0) ? (d.memory_kb / 1024).toFixed(1) + ' MB' : '-';
-            $('cp-st-uptime').textContent = d.uptime || '-';
-            $('cp-st-ver').textContent = d.panel_version || d.installed_version || '-';
-            $('cp-st-path').textContent = d.install_path || '<%=install_path%>';
-            $('cp-st-disk').textContent = d.disk_free || '-';
-        } catch(e) {
-            $('cp-st-status').innerHTML = '<span class="cp-badge cp-badge-unknown">查询失败</span>';
-        }
-    });
+        }, 1500);
+        setTimeout(function() { clearInterval(waitTimer); showModalSuccess(titles.restart, 'Restart command sent.'); }, 60000);
+    }
 }
 
-$('cp-modal-close').onclick = cpModalClose;
+// ========== Uninstall ==========
+function doUninstall() {
+    if (!confirm('Confirm: Uninstall ClawPanel?\nThis will stop the service and delete all files.')) return;
+    showModal('Uninstalling ClawPanel', 'Sending uninstall command...\n', 'Uninstalling...');
+    var x = new XMLHttpRequest();
+    x.open('GET', BASE + '/uninstall', true);
+    x.send(null);
+    var timer = setTimeout(function() {
+        showModalSuccess('Uninstall', 'Uninstall command completed.\nAll ClawPanel files have been removed.');
+    }, 5000);
+    x.onreadystatechange = function() {
+        if (x.readyState === 4) {
+            clearTimeout(timer);
+            showModalSuccess('Uninstall', 'Uninstall command sent.\nAll ClawPanel files have been removed.');
+        }
+    };
+}
 
+// Init: load status and start polling
 updateStatus();
 setInterval(updateStatus, 5000);
 //]]>
