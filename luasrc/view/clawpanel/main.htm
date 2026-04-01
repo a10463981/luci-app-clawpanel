@@ -155,8 +155,6 @@ function updateStatus() {
 function doInstall() {
     var path = $('f-path').value.trim();
     var openclawDir = $('f-openclaw-dir').value.trim();
-    var openclawApp = $('f-openclaw-app').value.trim();
-    var openclawWork = $('f-openclaw-work').value.trim();
     if (!path) { alert('请输入安装路径'); return; }
     if (path === '/' || path.indexOf('/overlay') === 0 || path.indexOf('/proc') === 0 || path.indexOf('/sys') === 0 || path.indexOf('/dev') === 0 || path.indexOf('/etc') === 0) {
         alert('系统路径被禁止，请使用外置存储路径'); return;
@@ -167,8 +165,6 @@ function doInstall() {
     var img = new Image();
     var url = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
     if (openclawDir) url += '&openclaw_dir=' + encodeURIComponent(openclawDir);
-    if (openclawApp) url += '&openclaw_app=' + encodeURIComponent(openclawApp);
-    if (openclawWork) url += '&openclaw_work=' + encodeURIComponent(openclawWork);
     img.src = url;
     var poll = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
