@@ -152,43 +152,46 @@ function doInstall() {
     var version = '';
     if (ver === 'custom') version = document.getElementById('f-ver').value.trim();
 
-    if (!confirm('确认安装到: ' + path + '\n\n将从此路径安装 ClawPanel，继续吗？')) return;
-
-    setMsg('安装已启动，请等待页面自动刷新...', '#7aa2f7');
-    document.getElementById('btn-do').disabled = true;
-    document.getElementById('btn-do').textContent = '安装中...';
-
-    // 通过图片加载触发后台安装（无刷新方式）
-    var img = new Image();
-    var vp = version ? '&version=' + encodeURIComponent(version) : '';
-    img.src = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl?action=setup&install_path=' + encodeURIComponent(path) + vp + '&_r=' + Math.random();
-    img.onload = function() { setMsg('安装请求已发送，等待结果...', '#7aa2f7'); };
-    img.onerror = function() { setMsg('安装请求已发送，等待结果...', '#7aa2f7'); };
-
-    // 等待后刷新看结果
-    setTimeout(function() { location.reload(); }, 8000);
+    // 直接触发安装 API（通过 form 提交，页面会刷新）
+    var form = document.createElement('form');
+    form.method = 'GET';
+    form.action = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl';
+    var fields = {
+        action: 'setup',
+        install_path: path
+    };
+    if (version) fields.version = version;
+    for (var k in fields) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = k;
+        inp.value = fields[k];
+        form.appendChild(inp);
+    }
+    document.body.appendChild(form);
+    form.submit();
 }
 
 function doUninstall() {
-    if (!confirm('确定要卸载 ClawPanel 吗？\n\n所有数据将被删除！')) return;
-    setMsg('正在卸载...', '#999');
-    document.getElementById('btn-un').disabled = true;
-    document.getElementById('btn-un').textContent = '卸载中...';
-    var img = new Image();
-    img.src = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/uninstall?_r=' + Math.random();
-    img.onload = img.onerror = function() {
-        setTimeout(function() { location.reload(); }, 3000);
-    };
+    if (!confirm('确定要卸载 ClawPanel 吗？所有数据将被删除！')) return;
+    var form = document.createElement('form');
+    form.method = 'GET';
+    form.action = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/uninstall';
+    document.body.appendChild(form);
+    form.submit();
 }
 
 function doSvc(action) {
-    if (!confirm('确认执行: ' + action + ' ?')) return;
-    setMsg('正在' + action + '...', '#999');
-    var img = new Image();
-    img.src = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl?action=' + action + '&_r=' + Math.random();
-    img.onload = img.onerror = function() {
-        setTimeout(function() { location.reload(); }, 2000);
-    };
+    var form = document.createElement('form');
+    form.method = 'GET';
+    form.action = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl';
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'action';
+    inp.value = action;
+    form.appendChild(inp);
+    document.body.appendChild(form);
+    form.submit();
 }
 </script>
 <%+footer%>
