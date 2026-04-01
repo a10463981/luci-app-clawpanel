@@ -23,6 +23,9 @@ CP_BIN="${CP_INSTALL_PATH}/clawpanel"
 CP_REPO="zhaoxinyi02/ClawPanel"
 CP_DOWNLOAD_BASE="https://github.com/${CP_REPO}/releases/download"
 
+# Gitee 镜像（GitHub 访问不稳定时使用）
+CP_GITEE_BASE="https://gitee.com/zxy000006/ClawPanel/raw/main/release"
+
 # ── 不允许安装到的危险路径（系统分区）──
 is_dangerous_path() {
 	local p="$1"
@@ -120,22 +123,54 @@ is_external_storage() {
 	return 0
 }
 
-# ── 下载文件（支持多镜像回退）──
+# ── 下载文件（支持 GitHub + Gitee 双源 + 重试）──
 download_file() {
 	local url="$1"
 	local dest="$2"
-	local mirror_base="https://gitee.com/zxy000006/ClawPanel/raw/main/release"
+	local gitee_base="https://gitee.com/zxy000006/ClawPanel/raw/main/release"
+
+	# 构造 Gitee 镜像 URL
+	local gitee_url=""
+	case "$url" in
+		https://github.com/zhaoxinyi02/ClawPanel/releases/download/*)
+			gitee_url=$(echo "$url" | sed 's|https://github.com/zhaoxinyi02/ClawPanel/releases/download|'"$gitee_base"'|')
+			;;
+	esac
 
 	local ok=false
-	if curl -sf --connect-timeout 15 --max-time 300 -L -o "$dest" "$url" 2>/dev/null; then
-		ok=true
-	else
-		# 尝试 Gitee 镜像
-		local mirror_url=$(echo "$url" | sed "s|https://github.com|${mirror_base}|g")
-		if curl -sf --connect-timeout 15 --max-time 300 -L -o "$dest" "$mirror_url" 2>/dev/null; then
-			ok=true
+	local http_code=""
+
+	# 尝试从 GitHub 下载（3次重试）
+	for try in 1 2 3; do
+		if [ $try -gt 1 ]; then
+			log_info "  第 ${try} 次重试 GitHub..."
+			sleep 3
 		fi
+		http_code=$(curl -sf --connect-timeout 20 --max-time 180 -L \
+			-o "$dest" -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+		if [ "$http_code" = "200" ]; then
+			ok=true
+			break
+		else
+			log_info "  GitHub HTTP $http_code ($(cat /proc/uptime | awk '{print $1}' | cut .1)s)"
+		fi
+	done
+
+	# GitHub 失败，尝试 Gitee
+	if [ "$ok" != "true" ] && [ -n "$gitee_url" ]; then
+		log_info "  尝试 Gitee 备用源..."
+		for try in 1 2; do
+			if [ $try -gt 1 ]; then sleep 2; fi
+			http_code=$(curl -sf --connect-timeout 20 --max-time 180 -L \
+				-o "$dest" -w "%{http_code}" "$gitee_url" 2>/dev/null || echo "000")
+			if [ "$http_code" = "200" ]; then
+				ok=true
+				log_info "  Gitee 下载成功"
+				break
+			fi
+		done
 	fi
+
 	$ok
 }
 
@@ -196,24 +231,40 @@ do_setup() {
 			return 1
 		fi
 	fi
-	log_info "目标版本: v$version"
+
+	# 去掉 .tr.gz 后缀（这是 tag 后缀，不是二进制文件名的一部分）
+	local base_version="${version%.tr.gz}"
+
+	# 清理可能多出的 v 前缀：tag 可能已经是 v5.2.8 或 vro-v5.2.8 格式
+	# 二进制文件名规范：clawpanel-v{base_version}-linux-{arch}
+	# 如果 base_version 已经是 v 开头，直接使用；否则补 v
+	case "$base_version" in
+		v*) local filename_ver="$base_version" ;;
+		*)  local filename_ver="v$base_version" ;;
+	esac
+
+	log_info "目标版本: $base_version"
 
 	# ── 确定下载文件名 ──
 	local os_name="linux"
 	local filename=""
 	case "${os_name}-${arch}" in
-		linux-amd64)   filename="clawpanel-v${version}-linux-amd64" ;;
-		linux-arm64)   filename="clawpanel-v${version}-linux-arm64" ;;
-		linux-armhf)   filename="clawpanel-v${version}-linux-armhf" ;;
-		linux-armv6)   filename="clawpanel-v${version}-linux-armv6" ;;
-		linux-386)     filename="clawpanel-v${version}-linux-386" ;;
-		linux-mips)    filename="clawpanel-v${version}-linux-mips" ;;
-		linux-mipsle)  filename="clawpanel-v${version}-linux-mipsle" ;;
+		linux-amd64)   filename="clawpanel-${filename_ver}-linux-amd64" ;;
+		linux-arm64)   filename="clawpanel-${filename_ver}-linux-arm64" ;;
+		linux-armhf)   filename="clawpanel-${filename_ver}-linux-armhf" ;;
+		linux-armv6)   filename="clawpanel-${filename_ver}-linux-armv6" ;;
+		linux-386)     filename="clawpanel-${filename_ver}-linux-386" ;;
+		linux-mips)    filename="clawpanel-${filename_ver}-linux-mips" ;;
+		linux-mipsle)  filename="clawpanel-${filename_ver}-linux-mipsle" ;;
 		*)
 			log_error "当前架构 ($arch) 暂不支持"
 			return 1
 			;;
 	esac
+
+	# 下载 URL：tag 是 base_version，文件是 filename
+	local download_url="${CP_DOWNLOAD_BASE}/${base_version}/${filename}"
+	log_info "下载链接: $download_url"
 
 	# ── 检查磁盘空间（需要 ≥ 500MB）──
 	log_info "检查磁盘空间..."
@@ -234,13 +285,11 @@ do_setup() {
 	mkdir -p "$CP_DATA" 2>/dev/null || true
 
 	# ── 下载二进制 ──
-	local download_url="${CP_DOWNLOAD_BASE}/v${version}/${filename}"
-	log_info "下载 ClawPanel v$version..."
-	log_info "下载链接: $download_url"
-
 	local tmpfile="/tmp/clawpanel-install-$$.bin"
+	log_info "下载 ClawPanel ${base_version}..."
+
 	if ! download_file "$download_url" "$tmpfile"; then
-		log_error "下载失败"
+		log_error "下载失败（请检查网络或尝试指定版本）"
 		rm -f "$tmpfile"
 		return 1
 	fi
@@ -266,7 +315,7 @@ do_setup() {
 	mkdir -p "${CP_DATA}/.openclaw" 2>/dev/null || true
 
 	# ── 写入版本信息 ──
-	echo "$version" > "${CP_INSTALL_PATH}/.version"
+	echo "$base_version" > "${CP_INSTALL_PATH}/.version"
 
 	# ── 配置 UCI ──
 	uci set clawpanel.main.install_path="$CP_BASE_PATH"
@@ -292,7 +341,7 @@ do_setup() {
 	echo ""
 	echo "=========================================="
 	echo "  ClawPanel 安装成功!"
-	echo "  版本: v$version"
+	echo "  版本: ${base_version}"
 	echo "  程序: $CP_INSTALL_PATH"
 	echo "  数据: $CP_DATA"
 	echo "  访问地址: http://路由器IP:19527"
