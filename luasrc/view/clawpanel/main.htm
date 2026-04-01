@@ -17,12 +17,28 @@ local enabled = uci:get("clawpanel", "main", "enabled") or "0"
 local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
 local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
 
--- 简化端口检测：直接用 pgrep
-local panel_running = (tonumber(trim(sh("pgrep -f 'clawpanel' 2>/dev/null | wc -l"))) or 0) > 0
+local panel_running = false
+do
+	local f = io.popen("timeout 5 sh -c 'pgrep -f clawpanel >/dev/null 2>&1 && echo yes || echo no' 2>/dev/null")
+	if f then
+		local r = trim(f:read("*a"))
+		f:close()
+		panel_running = (r == "yes")
+	end
+end
 
 local pid = ""
-if panel_running then
-	pid = trim(sh("pgrep -f 'clawpanel' 2>/dev/null | head -1"))
+do
+	local f = io.popen("timeout 3 pgrep -f clawpanel 2>/dev/null")
+	if f then
+		local out = f:read("*a") or ""
+		f:close()
+		-- pgrep 输出每行一个 PID，取第一个
+		for line in out:gmatch("[^\r\n]+") do
+			local n = tonumber(line:match("^%s*(%d+)") or "")
+			if n then pid = tostring(n); break end
+		end
+	end
 end
 
 local mem_kb = ""
@@ -45,7 +61,8 @@ end
 
 local panel_ver = ""
 if cp_bin ~= "" and install_path ~= "" then
-	panel_ver = trim(sh(cp_bin .. " --version 2>/dev/null | awk '{print $1}'"))
+	local ver_out = trim(sh(cp_bin .. " --version"))
+	panel_ver = (ver_out:match("^([%d%.]+)") or ver_out):gsub("%s.*$", "")
 	if panel_ver == "" then
 		local vf = io.open(install_path .. "/clawpanel/.version", "r")
 		if vf then panel_ver = trim(vf:read("*a")); vf:close() end
@@ -54,10 +71,31 @@ end
 
 local disk_free = ""
 if install_path ~= "" then
-	disk_free = trim(sh("df -h '" .. install_path .. "' 2>/dev/null | tail -1 | awk '{print $4}'"))
+	local f = io.popen("timeout 3 df -h '" .. install_path .. "' 2>/dev/null")
+	if f then
+		local out = f:read("*a") or ""
+		f:close()
+		-- 解析 df -h 输出第二行，取第4列（Available）
+		for line in out:gmatch("[^\r\n]+") do
+			local fields = {}
+			for w in line:gmatch("%S+") do table.insert(fields, w) end
+			if #fields >= 4 and fields[1] ~= "Filesystem" then
+				disk_free = fields[4]
+				break
+			end
+		end
+	end
 end
 
-local lan_ip = trim(sh("timeout 2 uci get network.lan.ipaddr 2>/dev/null || timeout 2 cat /tmp/resolv.conf.auto 2>/dev/null | grep -m1 'nameserver' | awk '{print $2}' || echo '192.168.1.1'")) or "192.168.1.1"
+local lan_ip = "192.168.1.1"
+do
+	local f = io.popen("timeout 2 uci get network.lan.ipaddr 2>/dev/null")
+	if f then
+		local r = trim(f:read("*a"))
+		f:close()
+		if r and r ~= "" and r:match("^%d+%.%d+%.%d+%.%d+$") then lan_ip = r end
+	end
+end
 local panel_access_url = "http://" .. lan_ip .. ":" .. port
 
 local status_badge
