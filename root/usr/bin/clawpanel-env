@@ -96,41 +96,38 @@ download_binary() {
     echo "Downloading from: $url"
 
     local tmpfile="/tmp/clawpanel_bin_$$"
-    # Use -s to suppress curl progress bar, show our own progress
-    local curl_out
-    curl_out=$(curl -sL -o "$tmpfile" -w "%{http_code}|%{size_download}" "$url") || {
-        rm -f "$tmpfile"
-        echo "Error: Download failed"
-        return 1
-    }
+    # Download silently (-s), follow redirects (-L), capture HTTP code (-w)
+    local http_code
+    http_code=$(curl -sL -o "$tmpfile" -w "%{http_code}" "$url")
 
-    local http_code="${curl_out%|*}"
-    local size_download="${curl_out#*|}"
-
-    if [ "$http_code" != "200" ] && [ "$http_code" != "302" ] && [ "$http_code" != "301" ]; then
+    if [ "$http_code" != "200" ]; then
         rm -f "$tmpfile"
         echo "Error: Download failed (HTTP $http_code)"
         return 1
     fi
 
-    if [ ! -s "$tmpfile" ]; then
+    # Check file size: arm64 binary should be ~28MB
+    local fsize
+    fsize=$(wc -c < "$tmpfile" 2>/dev/null || echo "0")
+    if [ -z "$fsize" ] || [ "$fsize" -lt 1000000 ]; then
         rm -f "$tmpfile"
-        echo "Error: Downloaded file is empty"
+        echo "Error: Downloaded file too small (${fsize} bytes), not a valid binary"
         return 1
     fi
 
-    # Check ELF magic bytes: 7f 45 4c 46 (using od, more portable than hexdump on OpenWrt)
-    local magic
-    magic=$(od -A n -t x1 -N 4 "$tmpfile" 2>/dev/null | tr -d ' ' | head -c 8)
-    if [ "$magic" != "7f454c46" ]; then
+    # Verify ELF magic bytes: first 4 bytes must be 0x7F 'E' 'L' 'F'
+    local first4
+    first4=$(od -A n -t x1 -N 4 "$tmpfile" 2>/dev/null)
+    first4=$(echo "$first4" | tr -d ' \n\r')
+    if [ "$first4" != "7f454c46" ]; then
         rm -f "$tmpfile"
-        echo "Error: Downloaded file is not a valid ELF binary (URL may be incorrect)"
+        echo "Error: File is not a valid ELF binary (magic: $first4)"
         return 1
     fi
 
     mv -f "$tmpfile" "$dest"
     chmod +x "$dest"
-    echo "Binary downloaded: $(du -h "$dest" | cut -f1) → $dest"
+    echo "Binary downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') → $dest"
     return 0
 }
 
