@@ -1,4 +1,4 @@
--- luci-app-clawpanel controller
+﻿-- luci-app-clawpanel controller
 module("luci.controller.clawpanel", package.seeall)
 
 local function sh(cmd)
@@ -11,6 +11,16 @@ end
 
 local function trim(s)
 	return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+-- 甯﹁秴鏃剁殑 shell 鎵ц锛岄伩鍏嶉樆濉烇紙clawpanel --version 浼氳仈缃戞娴嬫洿鏂帮紝蹇呴』鍔犺秴鏃讹級
+local function sh_timed(cmd, timeout_sec)
+	timeout_sec = timeout_sec or 5
+	local f = io.popen("timeout -t " .. timeout_sec .. " " .. cmd .. " 2>/dev/null")
+	if not f then return "" end
+	local out = f:read("*a")
+	f:close()
+	return out or ""
 end
 
 function index()
@@ -72,7 +82,7 @@ function action_status()
 	}
 
 	if cp_bin ~= "" and install_path ~= "" then
-		local v = trim(sh(cp_bin .. " --version 2>/dev/null"))
+		local v = trim(sh_timed(cp_bin .. " --version", 5))
 		if v and v ~= "" then result.panel_version = v end
 		local vf = io.open(install_path .. "/clawpanel/.version", "r")
 		if vf then
@@ -203,25 +213,23 @@ function action_service_ctl()
 
 		if install_path == "" then
 			http.prepare_content("application/json")
-			http.write_json({ status = "error", message = "安装路径不能为空" })
+			http.write_json({ status = "error", message = "瀹夎璺緞涓嶈兘涓虹┖" })
 			return
 		end
 
-		-- 用户可选设置 OpenClaw 数据目录，留空则自动推导为 <install_path>/clawpanel/data
+		-- 鐢ㄦ埛鍙€夎缃?OpenClaw 鏁版嵁鐩綍锛岀暀绌哄垯鑷姩鎺ㄥ涓?<install_path>/clawpanel/data
 		local openclaw_dir = http.formvalue("openclaw_dir") or ""
 		openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", "")
 		if openclaw_dir == "" then
-			-- 自动推导：跟随安装路径
-			openclaw_dir = install_path .. "/clawpanel/data"
+			-- 鑷姩鎺ㄥ锛氳窡闅忓畨瑁呰矾寰?			openclaw_dir = install_path .. "/clawpanel/data"
 		end
 
-		-- 保存到 UCI
+		-- 淇濆瓨鍒?UCI
 		sh("uci set clawpanel.main.install_path='" .. install_path .. "'")
 		sh("uci set clawpanel.main.openclaw_dir='" .. openclaw_dir .. "'")
 		sh("uci commit clawpanel 2>/dev/null")
 
-		-- 通过环境变量传给 clawpanel-env（不过 UCI 已经保存了，脚本里会读 UCI）
-		local env_prefix = ""
+		-- 閫氳繃鐜鍙橀噺浼犵粰 clawpanel-env锛堜笉杩?UCI 宸茬粡淇濆瓨浜嗭紝鑴氭湰閲屼細璇?UCI锛?		local env_prefix = ""
 		if version ~= "" and version ~= "latest" then
 			env_prefix = "CP_VERSION=" .. version .. " "
 		end
@@ -229,7 +237,7 @@ function action_service_ctl()
 		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' CP_OPENCLAW_DIR='" .. openclaw_dir .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
 
 		http.prepare_content("application/json")
-		http.write_json({ status = "ok", message = "安装已开始，请等待..." })
+		http.write_json({ status = "ok", message = "瀹夎宸插紑濮嬶紝璇风瓑寰?.." })
 
 	else
 		http.prepare_content("application/json")
@@ -272,7 +280,7 @@ function action_setup_log()
 
 	local state = "idle"
 	if running then
-		if log:match("success") or log:match("successful") or log:match("installed") or log:match("安装成功") or log:match("完成") then
+		if log:match("success") or log:match("successful") or log:match("installed") or log:match("瀹夎鎴愬姛") or log:match("瀹屾垚") then
 			state = "success"
 		else
 			state = "running"
