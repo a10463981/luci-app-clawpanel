@@ -1,4 +1,4 @@
--- luci-app-clawpanel controller
+-- luci-app-clawpanel controller with uninstall logging
 module("luci.controller.clawpanel", package.seeall)
 
 local function sh(cmd)
@@ -28,6 +28,8 @@ function index()
 		call("action_wait_stopped"), nil).leaf = true
 	entry({"admin", "services", "clawpanel", "uninstall"},
 		call("action_uninstall"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "uninstall_log"},
+		call("action_uninstall_log"), nil).leaf = true
 end
 
 -- Check if a process is running by PID
@@ -44,9 +46,9 @@ local function check_port(port)
 	local line = trim(sh("netstat -tulnp 2>/dev/null | grep ':" .. port .. " ' | head -1"))
 	if line and line ~= "" then
 		listening = true
-		-- Extract PID from netstat output like "tcp 0 0 :::19527 :::* LISTEN 32531/clawpanel"
-		local p = line:match("(%d+)%/")
-		if p then pid = p end
+		-- Extract PID: number before the "/" character
+		local p = line:match("(%d+)%/%S+")
+		if p and p ~= "" then pid = p end
 	end
 	return { listening = listening, pid = pid }
 end
@@ -263,8 +265,7 @@ function action_setup_log()
 		if ef then
 			local code = trim(ef:read("*a"))
 			ef:close()
-			local ok_exit, exit_code = pcall(function() return tonumber(code) end)
-		exit_code = (ok_exit and exit_code) and exit_code or -1
+			exit_code = tonumber(code) or -1
 		end
 	end
 
@@ -276,7 +277,7 @@ function action_setup_log()
 
 	if running then
 		-- Check if log contains success indicators
-		if log:match("success") or log:match("successful") or log:match("installed") or log:match("瀹夎鎴愬姛") or log:match("瀹屾垚") then
+		if log:match("success") or log:match("successful") or log:match("installed") or log:match("安装成功") or log:match("完成") then
 			state = "success"
 		else
 			state = "running"
@@ -291,22 +292,69 @@ function action_setup_log()
 	http.write_json({ state = state, exit_code = exit_code, log = log })
 end
 
+-- NEW: Uninstall with logging
 function action_uninstall()
 	local http = require "luci.http"
 	local uci = require "luci.model.uci".cursor()
 
+	-- Initialize uninstall log
+	local logf = io.open("/tmp/clawpanel-uninstall.log", "w")
+	local function log(msg)
+		if logf then
+			logf:write(msg .. "\n")
+			logf:flush()
+		end
+	end
+
+	log("=== ClawPanel Uninstall Started ===")
+
 	local install_path = uci:get("clawpanel", "main", "install_path") or ""
 	local cp_path = install_path ~= "" and (install_path .. "/clawpanel") or ""
 
+	log("Stopping ClawPanel service...")
 	sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
+	log("Service stopped")
+
+	log("Disabling auto-start...")
 	sh("/etc/init.d/clawpanel disable 2>/dev/null")
 	sh("uci set clawpanel.main.enabled=0; uci commit clawpanel 2>/dev/null")
+	log("Auto-start disabled")
 
 	if cp_path ~= "" and cp_path ~= "/" then
+		log("Removing files from " .. cp_path .. "...")
 		sh("rm -rf " .. cp_path)
+		log("Files removed")
+	else
+		log("No valid install path to remove")
 	end
+
+	log("Cleaning up temporary files...")
 	sh("rm -f /tmp/clawpanel-setup.* /var/run/clawpanel.pid")
+	log("Cleanup complete")
+	log("=== Uninstall Finished ===")
+
+	if logf then logf:close() end
 
 	http.prepare_content("application/json")
 	http.write_json({ status = "ok", message = "ClawPanel fully uninstalled" })
+end
+
+-- NEW: Get uninstall log
+function action_uninstall_log()
+	local http = require "luci.http"
+	local log = ""
+
+	local f = io.open("/tmp/clawpanel-uninstall.log", "r")
+	if f then
+		log = f:read("*a") or ""
+		f:close()
+	end
+
+	-- Check if uninstall is complete (install_path is empty)
+	local uci = require "luci.model.uci".cursor()
+	local install_path = uci:get("clawpanel", "main", "install_path") or ""
+	local completed = (install_path == "" or install_path == "/mnt/sda1")
+
+	http.prepare_content("application/json")
+	http.write_json({ log = log, completed = completed })
 end
