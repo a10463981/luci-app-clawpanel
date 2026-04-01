@@ -151,11 +151,99 @@ p{font-size:18px;color:#333;margin-top:20px}.ok{color:#1a7f37}.err{color:#cf222e
 		sh("/etc/init.d/clawpanel disable 2>/dev/null")
 		redirect_to_main("✅ 已禁用开机启动")
 	elseif action == "setup" then
+		-- 清除旧日志
 		sh("rm -f /tmp/clawpanel-setup.log /tmp/clawpanel-setup.pid /tmp/clawpanel-setup.exit")
 		local version = http.formvalue("version") or ""
 		local install_path = http.formvalue("install_path") or ""
 		install_path = install_path:gsub("[`$;&|<>]", "")
 		install_path = install_path:gsub("/+$", "")
+
+		sh("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
+
+		-- 启动后台安装脚本
+		local env_prefix = ""
+		if version ~= "" and version ~= "latest" then
+			env_prefix = "CP_VERSION=" .. version .. " "
+		end
+
+		-- 后台执行安装，日志写入 /tmp/clawpanel-setup.log
+		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
+
+		-- 返回安装监控页面（自动轮询日志）
+		local main_url = dispatcher.build_url("admin", "services", "clawpanel")
+		http.prepare_content("text/html; charset=utf-8")
+		http.write([=[<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>ClawPanel 安装中...</title>
+<style>
+body{font-family:'Courier New',Consolas,monospace;background:#1e1e1e;color:#d4d4d4;margin:0;padding:20px}
+h2{color:#4a90d9;margin-top:0}
+.log{background:#252525;border:1px solid #444;border-radius:8px;padding:12px 16px;
+     font-size:13px;line-height:1.7;max-height:65vh;overflow-y:auto;
+     white-space:pre-wrap;word-break:break-all;min-height:200px}
+.log div{margin:0}
+.log-ok{color:#4a90d9}.log-err{color:#cf222e}.log-warn{color:#f0c674}.log-info{color:#ccc}
+.footer{margin-top:14px;font-size:12px;color:#888}
+.footer a{color:#4a90d9;text-decoration:none}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.dot{animation:blink 1s infinite}
+</style>
+</head><body>
+<h2>📦 ClawPanel 安装中 <span class="dot">...</span></h2>
+<div class="log" id="log"><div class="log-info">正在启动安装程序...</div></div>
+<div class="footer">
+<span id="state">安装中...</span> &nbsp;|&nbsp;
+<a href="]=] .. main_url .. [=[">安装完成后，点击返回控制面板</a>
+</div>
+<script>
+var logEl = document.getElementById('log');
+var stateEl = document.getElementById('state');
+var exitCode = null;
+var pollCount = 0;
+
+function highlight(text){
+	return text
+		.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+		.replace(/\[✓\]/g,'<span class="log-ok">[✓]</span>')
+		.replace(/\[✗\]/g,'<span class="log-err">[✗]</span>')
+		.replace(/\[!\]/g,'<span class="log-warn">[!]</span>')
+		.replace(/\[▶\]/g,'<span class="log-ok">[▶]</span>');
+}
+
+function poll(){
+	fetch(']=] .. dispatcher.build_url("admin", "services", "clawpanel") .. [=[/setup_log?t='+Date.now(),{cache:'no-cache',credentials:'same-origin'})
+		.then(function(r){return r.json();})
+		.then(function(data){
+			var lines = (data.log||'').split('\n');
+			var html='';
+			for(var i=0;i<lines.length;i++){
+				if(!lines[i]&&i===lines.length-1)continue;
+				html+='<div>'+highlight(lines[i])+'</div>';
+			}
+			if(html)logEl.innerHTML=html;
+			logEl.scrollTop=logEl.scrollHeight;
+
+			if(data.state==='running'){
+				stateEl.textContent='安装中... (请耐心等待，下载可能需要数十秒)';
+			}else if(data.state==='success'){
+				stateEl.innerHTML='<span style="color:#1a7f37">✅ 安装成功！</span>';
+				exitCode=0;
+			}else if(data.state==='failed'){
+				stateEl.innerHTML='<span style="color:#cf222e">❌ 安装失败 (exit code: '+data.exit_code+')</span>';
+				exitCode=data.exit_code;
+			}
+		})
+		.catch(function(){
+			logEl.innerHTML+='<div class="log-warn">等待日志...</div>';
+		});
+}
+
+// 轮询：每2秒
+setInterval(poll, 2000);
+poll();
+</script>
+</body></html>]=])
+		return
 
 		sh("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
 
