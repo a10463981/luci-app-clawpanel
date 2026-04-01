@@ -1,111 +1,11 @@
 <%#
-main.htm - ClawPanel 主页（服务端渲染状态 + 安装终端弹窗）
+main.htm - ClawPanel 主页（JS获取状态，form submit执行操作）
 -%>
 <%
-local function sh(cmd)
-	local f = io.popen("timeout 5 " .. cmd .. " 2>/dev/null")
-	if not f then return "" end
-	local out = f:read("*a")
-	f:close()
-	return out or ""
-end
-local function trim(s) return (s or ""):gsub("^%s+",""):gsub("%s+$","") end
-
 local uci = require("luci.model.uci").cursor()
+local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
 local port = uci:get("clawpanel", "main", "port") or "19527"
 local enabled = uci:get("clawpanel", "main", "enabled") or "0"
-local install_path = uci:get("clawpanel", "main", "install_path") or "/mnt/sda1"
-local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
-
-local panel_running = false
-do
-	local f = io.popen("timeout 5 sh -c 'pgrep -f clawpanel >/dev/null 2>&1 && echo yes || echo no' 2>/dev/null")
-	if f then
-		local r = trim(f:read("*a"))
-		f:close()
-		panel_running = (r == "yes")
-	end
-end
-
-local pid = ""
-do
-	local f = io.popen("timeout 3 pgrep -f clawpanel 2>/dev/null")
-	if f then
-		local out = f:read("*a") or ""
-		f:close()
-		-- pgrep 输出每行一个 PID，取第一个
-		for line in out:gmatch("[^\r\n]+") do
-			local n = tonumber(line:match("^%s*(%d+)") or "")
-			if n then pid = tostring(n); break end
-		end
-	end
-end
-
-local mem_kb = ""
-if pid ~= "" then mem_kb = trim(sh("awk '/VmRSS/{print $2}' /proc/" .. pid .. "/status 2>/dev/null")) end
-
-local uptime = ""
-if pid ~= "" then
-	local start_ts = trim(sh("stat -c %Y /proc/" .. pid .. " 2>/dev/null"))
-	local ts = tonumber(start_ts) or 0
-	if ts > 0 then
-		local up = os.time() - ts
-		local h = math.floor(up / 3600)
-		local m = math.floor((up % 3600) / 60)
-		local s = up % 60
-		if h > 0 then uptime = string.format("%dh %dm %ds", h, m, s)
-		elseif m > 0 then uptime = string.format("%dm %ds", m, s)
-		else uptime = s .. "s" end
-	end
-end
-
-local panel_ver = ""
-if cp_bin ~= "" and install_path ~= "" then
-	local ver_out = trim(sh(cp_bin .. " --version"))
-	panel_ver = (ver_out:match("^([%d%.]+)") or ver_out):gsub("%s.*$", "")
-	if panel_ver == "" then
-		local vf = io.open(install_path .. "/clawpanel/.version", "r")
-		if vf then panel_ver = trim(vf:read("*a")); vf:close() end
-	end
-end
-
-local disk_free = ""
-if install_path ~= "" then
-	local f = io.popen("timeout 3 df -h '" .. install_path .. "' 2>/dev/null")
-	if f then
-		local out = f:read("*a") or ""
-		f:close()
-		-- 解析 df -h 输出第二行，取第4列（Available）
-		for line in out:gmatch("[^\r\n]+") do
-			local fields = {}
-			for w in line:gmatch("%S+") do table.insert(fields, w) end
-			if #fields >= 4 and fields[1] ~= "Filesystem" then
-				disk_free = fields[4]
-				break
-			end
-		end
-	end
-end
-
-local lan_ip = "192.168.1.1"
-do
-	local f = io.popen("timeout 2 uci get network.lan.ipaddr 2>/dev/null")
-	if f then
-		local r = trim(f:read("*a"))
-		f:close()
-		if r and r ~= "" and r:match("^%d+%.%d+%.%d+%.%d+$") then lan_ip = r end
-	end
-end
-local panel_access_url = "http://" .. lan_ip .. ":" .. port
-
-local status_badge
-if panel_running then
-	status_badge = '<span class="cp-badge cp-badge-running">运行中</span>'
-elseif enabled == "1" then
-	status_badge = '<span class="cp-badge cp-badge-stopped">已停止</span>'
-else
-	status_badge = '<span class="cp-badge cp-badge-disabled">未安装</span>'
-end
 %>
 <%+header%>
 
@@ -114,6 +14,7 @@ body{padding:20px;font-family:inherit}
 .cp-badge{display:inline-block;padding:2px 12px;border-radius:12px;font-size:12px;font-weight:600}
 .cp-badge-running{background:#e6f7e9;color:#1a7f37}
 .cp-badge-stopped{background:#ffeef0;color:#cf222e}
+.cp-badge-unknown{background:#fff8c5;color:#9a6700}
 .cp-badge-disabled{background:#f0f0f0;color:#656d76}
 .cp-panel{border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;margin-bottom:20px}
 .cp-panel-title{background:linear-gradient(135deg,#4a90d9,#357abd);color:#fff;padding:10px 16px;font-size:14px;font-weight:600}
@@ -126,11 +27,11 @@ body{padding:20px;font-family:inherit}
 .cp-btn-action{background:#6c757d}
 .cp-btn-remove{background:#cf222e}
 .cp-btn-web{background:#1a7f37}
-.cp-btn:hover{opacity:0.85;filter:brightness(1.1)}
+.cp-btn:hover{opacity:0.85}
 .cp-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:9999;align-items:center;justify-content:center}
 .cp-modal.show{display:flex}
-.cp-modal-box{background:#1e1e1e;border-radius:12px;padding:0;max-width:720px;width:94%;box-shadow:0 12px 40px rgba(0,0,0,0.7);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;display:none}
-.cp-modal.show .cp-modal-box,.cp-modal.show{display:flex}
+.cp-modal-box{background:#1e1e1e;border-radius:12px;padding:0;max-width:720px;width:94%;box-shadow:0 12px 40px rgba(0,0,0,0.7);max-height:88vh;overflow:hidden;flex-direction:column}
+.cp-modal.show{display:flex}
 .cp-terminal-header{display:flex;align-items:center;padding:10px 14px;background:#2d2d2d;border-bottom:1px solid #444}
 .cp-terminal-title{color:#ccc;font-size:13px;flex:1;font-family:monospace}
 .cp-terminal-close{color:#888;background:none;border:none;font-size:20px;cursor:pointer;padding:0 4px;line-height:1}
@@ -145,7 +46,7 @@ body{padding:20px;font-family:inherit}
 
 <!-- 安装终端弹窗 -->
 <div class="cp-modal" id="m-install">
-<div class="cp-modal-box" id="install-modal-box">
+<div class="cp-modal-box">
 <div class="cp-terminal-header">
 <span class="cp-terminal-title" id="install-title">📦 安装 ClawPanel</span>
 <button class="cp-terminal-close" id="install-close-btn" title="关闭">&times;</button>
@@ -169,7 +70,7 @@ body{padding:20px;font-family:inherit}
 <pre style="color:#d4d4d4;margin-top:8px">此操作将：
 1. 停止 ClawPanel 服务
 2. 禁用开机自启
-3. 删除程序目录 /mnt/sda1/clawpanel
+3. 删除程序目录 <%=install_path%>/clawpanel
 4. 清除 UCI 配置
 
 所有数据将被永久删除，不可恢复！</pre>
@@ -191,63 +92,93 @@ body{padding:20px;font-family:inherit}
 <div class="cp-panel">
 <div class="cp-panel-title">ClawPanel 服务状态</div>
 <table>
-<tr><td>运行状态</td><td><%=status_badge%></td></tr>
-<tr><td>面板服务</td><td><%=panel_running and '端口 ' .. port .. ' (监听中)' or '端口 ' .. port .. ' (未监听)'%></td></tr>
-<tr><td>进程 PID</td><td><%=pid ~= "" and pid or '-'%></td></tr>
-<tr><td>内存占用</td><td><%=mem_kb ~= "" and (mem_kb .. ' KB') or '-'%></td></tr>
-<tr><td>运行时间</td><td><%=uptime ~= "" and uptime or '-'%></td></tr>
-<tr><td>版本</td><td><%=panel_ver ~= "" and panel_ver or '-'%></td></tr>
+<tr><td>运行状态</td><td id="s-status"><span class="cp-badge cp-badge-unknown">加载中...</span></td></tr>
+<tr><td>面板服务</td><td id="s-port">-</td></tr>
+<tr><td>进程 PID</td><td id="s-pid">-</td></tr>
+<tr><td>内存占用</td><td id="s-mem">-</td></tr>
+<tr><td>运行时间</td><td id="s-uptime">-</td></tr>
+<tr><td>版本</td><td id="s-ver">-</td></tr>
 <tr><td>安装路径</td><td><%=install_path%></td></tr>
-<tr><td>剩余空间</td><td><%=disk_free ~= "" and disk_free or '-'%></td></tr>
+<tr><td>剩余空间</td><td id="s-disk">-</td></tr>
 </table>
 </div>
 
 <!-- 操作按钮 -->
 <div style="margin-bottom:14px">
-<button class="cp-btn cp-btn-apply" onclick="doInstall()">安装/重装</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('restart')">重启</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('stop')">停止</button>
-<button class="cp-btn cp-btn-action" onclick="doSvc('start')">启动</button>
+<button class="cp-btn cp-btn-apply" id="btn-install" onclick="doInstall()">安装/重装</button>
+<button class="cp-btn cp-btn-action" id="btn-restart" onclick="doSvc('restart')">重启</button>
+<button class="cp-btn cp-btn-action" id="btn-stop" onclick="doSvc('stop')">停止</button>
+<button class="cp-btn cp-btn-action" id="btn-start" onclick="doSvc('start')">启动</button>
 <button class="cp-btn cp-btn-remove" onclick="showUninstall()">卸载</button>
-<a href="<%=panel_access_url%>" target="_blank" class="cp-btn cp-btn-web">访问 ClawPanel</a>
-<button class="cp-btn cp-btn-action" onclick="location.reload()" style="float:right">刷新状态</button>
+<a href="http://192.168.1.1:<%=port%>" target="_blank" class="cp-btn cp-btn-web">访问 ClawPanel</a>
+<button class="cp-btn cp-btn-action" onclick="refreshStatus()" style="float:right">刷新状态</button>
 </div>
 
 <!-- 使用指南 -->
 <div style="border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;line-height:1.8;font-size:13px">
 <strong>使用指南</strong><br/>
-完成后访问 <a href="<%=panel_access_url%>" target="_blank" style="color:#4a90d9"><b><%=panel_access_url%></b></a> 进入 ClawPanel<br/>
+完成后访问 <a href="http://192.168.1.1:<%=port%>" target="_blank" style="color:#4a90d9"><b>http://192.168.1.1:<%=port%></b></a> 进入 ClawPanel<br/>
 <strong style="color:#cf222e">必须安装到外置存储（/mnt/sda1 等），禁止系统分区</strong>
 </div>
 
 <script>
+// ── API 调用（通过 img 标签，绕过 AJAX 限制）──
+var BASE = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>';
+
+// 刷新状态（页面加载时和用户点击刷新时）
+function refreshStatus() {
+	var img = new Image();
+	img.onload = img.onerror = function() {
+		// 忽略加载结果，状态通过 form submit 后的页面刷新更新
+	};
+	img.src = BASE + '/status_api?_r=' + Math.random() + '&t=' + Date.now();
+}
+
+// 直接 form submit 触发 API，然后跳转回主页
+function submitApi(action, extra) {
+	var form = document.createElement('form');
+	form.method = 'GET';
+	form.action = BASE + '/' + action;
+	if (extra) {
+		for (var k in extra) {
+			var inp = document.createElement('input');
+			inp.type = 'hidden';
+			inp.name = k;
+			inp.value = extra[k];
+			form.appendChild(inp);
+		}
+	}
+	document.body.appendChild(form);
+	form.submit();
+}
+
+// ── 弹窗控制 ──
 var installModal = document.getElementById('m-install');
 var installLog = document.getElementById('install-log');
 var installTitle = document.getElementById('install-title');
 var installStatus = document.getElementById('install-status');
 var pollTimer = null;
 
-function showInstall(){installModal.classList.add('show')}
-function closeInstallModal(){
-	if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+function showInstall() { installModal.classList.add('show'); }
+function closeInstallModal() {
+	if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 	installModal.classList.remove('show');
 }
-function showUninstall(){document.getElementById('m-uninstall').classList.add('show')}
-function closeUninstallModal(){document.getElementById('m-uninstall').classList.remove('show')}
+function showUninstall() { document.getElementById('m-uninstall').classList.add('show'); }
+function closeUninstallModal() { document.getElementById('m-uninstall').classList.remove('show'); }
 
 document.getElementById('install-close-btn').onclick = closeInstallModal;
 document.getElementById('install-close-btn2').onclick = closeInstallModal;
-
-document.addEventListener('click',function(e){
-	if(e.target.classList.contains('cp-modal')){
-		if(e.target.id==='m-install')closeInstallModal();
-		else if(e.target.id==='m-uninstall')closeUninstallModal();
+document.addEventListener('click', function(e) {
+	if (e.target.classList.contains('cp-modal')) {
+		if (e.target.id === 'm-install') closeInstallModal();
+		else if (e.target.id === 'm-uninstall') closeUninstallModal();
 	}
 });
 
-// 高亮日志行
-function highlightLog(text){
-	if(!text)return '';
+// ── 高亮日志 ──
+function highlightLog(text) {
+	if (!text) return '';
 	return text
 		.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 		.replace(/\[✓\]/g,'<span style="color:#4a90d9">[✓]</span>')
@@ -256,91 +187,81 @@ function highlightLog(text){
 		.replace(/\[▶\]/g,'<span style="color:#4a90d9">[▶]</span>');
 }
 
-// 轮询安装日志
-function pollInstallLog(){
-	var url = '<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/setup_log?t=' + Date.now();
-	fetch(url, {cache:'no-cache', credentials:'same-origin'})
-		.then(function(r){ return r.json(); })
-		.then(function(data){
-			var lines = (data.log||'').split('\n');
+// ── 轮询安装日志（通过 fetch，页面已认证）──
+function pollInstallLog() {
+	var url = BASE + '/setup_log?t=' + Date.now();
+	fetch(url, { cache: 'no-cache', credentials: 'same-origin' })
+		.then(function(r) { return r.json(); })
+		.then(function(data) {
+			var lines = (data.log || '').split('\n');
 			var html = '';
-			for(var i=0;i<lines.length;i++){
-				if(!lines[i] && i===lines.length-1)continue;
-				html += '<div>'+highlightLog(lines[i])+'</div>';
+			for (var i = 0; i < lines.length; i++) {
+				if (!lines[i] && i === lines.length - 1) continue;
+				html += '<div>' + highlightLog(lines[i]) + '</div>';
 			}
-			if(html) installLog.innerHTML='<pre>'+html+'</pre>';
+			if (html) installLog.innerHTML = '<pre>' + html + '</pre>';
 			installLog.scrollTop = installLog.scrollHeight;
 
-			if(data.state==='running'){
+			if (data.state === 'running') {
 				installStatus.textContent = '安装中...';
 				installTitle.innerHTML = '📦 安装 ClawPanel — <span style="color:#f0c674">安装中...</span>';
-			}else if(data.state==='success'){
-				installStatus.textContent = '';
+			} else if (data.state === 'success') {
 				installTitle.innerHTML = '🎉 安装完成！';
-				installLog.innerHTML += '<div style="color:#1a7f37;margin-top:8px">✅ ClawPanel 安装成功！页面将自动刷新...</div>';
-				if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
-				setTimeout(function(){closeInstallModal();location.reload();},2500);
-			}else if(data.state==='failed'){
+				installLog.innerHTML += '<div style="color:#1a7f37;margin-top:8px">✅ 安装完成！页面将自动刷新...</div>';
+				if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+				setTimeout(function() { closeInstallModal(); location.reload(); }, 2500);
+			} else if (data.state === 'failed') {
 				installTitle.innerHTML = '❌ 安装失败';
-				installLog.innerHTML += '<div style="color:#cf222e;margin-top:8px">安装失败 (exit code: '+data.exit_code+')</div>';
+				installLog.innerHTML += '<div style="color:#cf222e;margin-top:8px">安装失败 (exit code: ' + (data.exit_code || '?') + ')</div>';
 				installStatus.textContent = '请检查网络或更换安装路径后重试';
-				if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+				if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 			}
 		})
-		.catch(function(){
+		.catch(function() {
 			installStatus.textContent = '等待日志...';
 		});
 }
 
-function doInstall(){
+// ── 操作 ──
+function doInstall() {
 	var path = document.getElementById('f-path').value.trim();
-	if(!path){alert('请输入安装路径');return;}
-	var dangerous=['/overlay','/rom','/boot','/proc','/sys','/dev','/opt','/tmp','/var','/etc','/root','/usr','/bin','/sbin','/lib','/'];
-	for(var i=0;i<dangerous.length;i++){
-		if(path===dangerous[i]||path.indexOf(dangerous[i]+'/')===0){
-			alert('禁止安装到系统分区！请输入外置存储路径');return;
+	if (!path) { alert('请输入安装路径'); return; }
+	var dangerous = ['/overlay','/rom','/boot','/proc','/sys','/dev','/opt','/tmp','/var','/etc','/root','/usr','/bin','/sbin','/lib','/'];
+	for (var i = 0; i < dangerous.length; i++) {
+		if (path === dangerous[i] || path.indexOf(dangerous[i] + '/') === 0) {
+			alert('禁止安装到系统分区！请输入外置存储路径'); return;
 		}
 	}
-
-	// 显示弹窗，开始轮询
 	showInstall();
-	installLog.innerHTML='<pre style="color:#888">正在提交安装任务...</pre>';
-	installTitle.innerHTML='📦 安装 ClawPanel — <span style="color:#f0c674">准备中...</span>';
-	installStatus.textContent='';
+	installLog.innerHTML = '<pre style="color:#888">正在提交安装任务...</pre>';
+	installTitle.innerHTML = '📦 安装 ClawPanel — <span style="color:#f0c674">准备中...</span>';
+	installStatus.textContent = '';
 
 	// 触发后台安装
-	var form=document.createElement('form');
-	form.method='GET';
-	form.action='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl';
-	var fields={action:'setup',install_path:path};
-	for(var k in fields){
-		var inp=document.createElement('input');inp.type='hidden';inp.name=k;inp.value=fields[k];form.appendChild(inp);
-	}
-	document.body.appendChild(form);
-	form.submit();
+	submitApi('service_ctl', { action: 'setup', install_path: path });
 
-	// 开始轮询日志
-	pollTimer = setInterval(pollInstallLog, 2000);
-	pollInstallLog();
+	// 等待2秒后开始轮询日志
+	pollTimer = setTimeout(function() {
+		pollTimer = setInterval(pollInstallLog, 2500);
+		pollInstallLog();
+	}, 2000);
 }
 
-function doUninstall(){
+function doUninstall() {
 	closeUninstallModal();
-	var form=document.createElement('form');
-	form.method='GET';
-	form.action='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/uninstall';
-	document.body.appendChild(form);
-	form.submit();
+	submitApi('uninstall', {});
 }
 
-function doSvc(action){
-	var form=document.createElement('form');
-	form.method='GET';
-	form.action='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl';
-	var inp=document.createElement('input');inp.type='hidden';inp.name='action';inp.value=action;form.appendChild(inp);
-	document.body.appendChild(form);
-	form.submit();
+function doSvc(action) {
+	submitApi('service_ctl', { action: action });
 }
+
+// ── 页面加载时：刷新状态（通过 form submit 获取最新数据，然后自动跳转回来）──
+(function() {
+	// 不干扰用户操作，静默刷新
+	var img = new Image();
+	img.src = BASE + '/status_api?_r=' + Math.random();
+})();
 </script>
 
 <%+footer%>
