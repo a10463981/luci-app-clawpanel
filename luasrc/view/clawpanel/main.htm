@@ -56,7 +56,9 @@ if lan_addr == "" then lan_addr = "192.168.1.1" end
 .b{animation:blink 1s infinite}
 </style>
 
-<!-- Terminal Modal -->
+<!-- Hidden iframe for fire-and-forget form submissions -->
+<iframe name="cp_hidden_frame" style="display:none" sandbox=""></iframe>
+
 <div id="cp-modal">
 <div class="modal-box">
 <div class="modal-hdr">
@@ -230,9 +232,14 @@ function doInstall() {
 
     showModal('\u6b63\u5728\u5b89\u88c5 ClawPanel...', '\u63d0\u4ea4\u5b89\u88c5\u4efb\u52a1...\n', '\u5b89\u88c5\u4e2d...');
 
-    var x = new XMLHttpRequest();
-    x.open('GET', BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path), true);
-    x.send(null);
+    // Submit to hidden iframe (no page navigation, no XHR)
+    var form = document.createElement('form');
+    form.method = 'GET';
+    form.action = BASE + '/service_ctl?action=setup&install_path=' + encodeURIComponent(path);
+    form.target = 'cp_hidden_frame';
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
 
     modalPollTimer = setInterval(function() {
         xhr(BASE + '/setup_log', function(d) {
@@ -277,23 +284,22 @@ function doSvc(action) {
         stop: '\u505c\u6b62 ClawPanel',
         start: '\u542f\u52a8 ClawPanel'
     };
-    var waitApi = (action === 'stop') ? '/wait_stopped' : '/wait_running';
-    var successMsg = {
-        stop: '\u7aef\u53e3\u5df2\u5173\u95ed\u3002ClawPanel \u5df2\u505c\u6b62\u3002',
-        start: '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\nClawPanel \u5df2\u542f\u52a8\u3002',
-        restart: '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\n\u91cd\u542f\u5b8c\u6210\u3002'
-    };
 
     if (action === 'stop') {
         showModal(titles.stop, '\u6b63\u5728\u505c\u6b62...\n', '\u505c\u6b62\u4e2d...');
-        var x = new XMLHttpRequest();
-        x.open('GET', BASE + '/service_ctl?action=stop', true);
-        x.send(null);
+        // Fire action via hidden iframe
+        var form = document.createElement('form');
+        form.method = 'GET';
+        form.action = BASE + '/service_ctl?action=stop';
+        form.target = 'cp_hidden_frame';
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
         var waitTimer = setInterval(function() {
-            xhr(BASE + waitApi, function(r) {
+            xhr(BASE + '/wait_stopped', function(r) {
                 if (r.state === 'stopped') {
                     clearInterval(waitTimer);
-                    showModalSuccess(titles.stop, successMsg.stop);
+                    showModalSuccess(titles.stop, '\u7aef\u53e3\u5df2\u5173\u95ed\u3002ClawPanel \u5df2\u505c\u6b62\u3002');
                 }
             });
         }, 1000);
@@ -301,11 +307,15 @@ function doSvc(action) {
 
     } else if (action === 'start') {
         showModal(titles.start, '\u6b63\u5728\u542f\u52a8...\n', '\u542f\u52a8\u4e2d...');
-        var x = new XMLHttpRequest();
-        x.open('GET', BASE + '/service_ctl?action=start', true);
-        x.send(null);
+        var form = document.createElement('form');
+        form.method = 'GET';
+        form.action = BASE + '/service_ctl?action=start';
+        form.target = 'cp_hidden_frame';
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
         var waitTimer = setInterval(function() {
-            xhr(BASE + waitApi, function(r) {
+            xhr(BASE + '/wait_running', function(r) {
                 if (r.state === 'running') {
                     clearInterval(waitTimer);
                     showModalSuccess(titles.start, '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\nClawPanel \u5df2\u542f\u52a8\u3002');
@@ -316,9 +326,13 @@ function doSvc(action) {
 
     } else if (action === 'restart') {
         showModal(titles.restart, '\u6b63\u5728\u91cd\u542f...\n', '\u91cd\u542f\u4e2d...');
-        var x = new XMLHttpRequest();
-        x.open('GET', BASE + '/service_ctl?action=restart', true);
-        x.send(null);
+        var form = document.createElement('form');
+        form.method = 'GET';
+        form.action = BASE + '/service_ctl?action=restart';
+        form.target = 'cp_hidden_frame';
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
         var phase = 'stopping';
         var waitTimer = setInterval(function() {
             xhr(BASE + (phase === 'stopping' ? '/wait_stopped' : '/wait_running'), function(r) {
@@ -340,19 +354,19 @@ function doUninstall() {
     if (!confirm('\u786e\u8ba4\u5378\u8f7d ClawPanel\uff1f\n\u8fd9\u5c06\u505c\u6b62\u670d\u52a1\u5e76\u5220\u9664\u6240\u6709\u6587\u4ef6\u3002')) return;
     showModal('\u5378\u8f7d ClawPanel', '\u6b63\u5728\u5378\u8f7d...\n', '\u5378\u8f7d\u4e2d...');
 
-    // Fire-and-forget: use hidden form to avoid iframe replacement issue
+    // Submit to hidden iframe: page won't navigate away
     var form = document.createElement('form');
     form.method = 'GET';
     form.action = BASE + '/uninstall';
-    form.target = '_self';
+    form.target = 'cp_hidden_frame';
     document.body.appendChild(form);
     form.submit();
     document.body.removeChild(form);
 
-    // Close modal and refresh status after 3 seconds
+    // Close modal and refresh status after 5 seconds (let uninstall run in background)
     setTimeout(function() {
         cpModalClose();
-    }, 3000);
+    }, 5000);
 }
 
 updateStatus();
