@@ -217,7 +217,7 @@ do_setup() {
         # Step 2: Look for any uploaded ELF file in install dir
         echo "Main binary not found, scanning for uploaded file..."
         local found
-        found=$(find_elf_binary "$cp_install_path")
+        found=$(find_elf_binary "$cp_install_path" || true)
         if [ -n "$found" ]; then
             echo "Found uploaded file: $found"
             if [ "$found" != "$cp_binary" ]; then
@@ -227,7 +227,8 @@ do_setup() {
             fi
         else
             # Step 3: Try GitHub download
-            echo "No local file found, trying GitHub..."
+            echo "No uploaded file found in /tmp or install dir."
+            echo "Trying GitHub..."
             local url
             url=$(get_url "$version" "$CP_ARCH")
             if download_binary "$url" "$cp_binary"; then
