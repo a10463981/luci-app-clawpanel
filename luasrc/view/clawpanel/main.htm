@@ -121,8 +121,6 @@ function doInstall(){
 			alert('禁止安装到系统分区！请输入外置存储路径，如 /mnt/sda1');return;
 		}
 	}
-	if(!confirm('确认安装到: '+path+'\n\nClawPanel 将被安装，继续吗？'))return;
-
 	var ver='latest';
 	var radios=document.getElementsByName('ver');
 	for(var i=0;i<radios.length;i++){if(radios[i].checked)ver=radios[i].value;}
@@ -142,7 +140,6 @@ function doInstall(){
 }
 
 function doUninstall(){
-	if(!confirm('确定要卸载 ClawPanel 吗？所有数据将被删除！'))return;
 	var form=document.createElement('form');
 	form.method='GET';
 	form.action='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/uninstall';
@@ -151,7 +148,6 @@ function doUninstall(){
 }
 
 function doSvc(action){
-	if(!confirm('确认执行: '+action+' ?'))return;
 	var form=document.createElement('form');
 	form.method='GET';
 	form.action='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/service_ctl';
