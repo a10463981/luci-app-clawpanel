@@ -200,14 +200,11 @@ function doSvc(action) {
 function doUninstall() {
     if (!confirm('确认卸载 ClawPanel？\n这将停止服务并删除所有文件。')) return;
     showModal('正在卸载', '执行中...', '正在卸载...');
-    // Submit to hidden iframe instead of window.open
-    var f = document.createElement('form');
-    f.method = 'GET';
-    f.action = BASE + '/uninstall';
-    f.target = 'cp_frame';
-    document.body.appendChild(f);
-    f.submit();
-    document.body.removeChild(f);
+    // Use setTimeout + location.href - show modal first, then navigate
+    var url = BASE + '/uninstall';
+    setTimeout(function() {
+        window.location.href = url;
+    }, 100);
     var poll = setInterval(function() {
         xhr(BASE + '/status_api', function(d) {
             if (!d.install_path || d.install_path === '') {
