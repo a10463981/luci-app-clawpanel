@@ -182,19 +182,21 @@ function doSvc(action) {
 
 function doUninstall() {
     if (!confirm('确认卸载 ClawPanel？\n这将停止服务并删除所有文件。')) return;
-    showModal('正在卸载', '执行中...', '正在卸载...');
+    showModal('正在卸载', '执行中...', '正在初始化...');
     // Fire-and-forget using Image object
     var img = new Image();
     img.src = BASE + '/uninstall';
+    // Poll uninstall log
     var poll = setInterval(function() {
-        xhr(BASE + '/status_api', function(d) {
-            if (!d.install_path || d.install_path === '') {
+        xhr(BASE + '/uninstall_log', function(d) {
+            $('cp-modal-content').innerHTML = (d.log || '等待日志...').replace(/\n/g, '<br>');
+            if (d.completed) {
                 clearInterval(poll);
-                showModal('卸载完成', '成功', 'ClawPanel 已完全卸载。');
+                showModal('卸载完成', '成功', 'ClawPanel 已完全卸载。<br>点击"关闭"刷新状态面板。');
             }
         });
-    }, 3000);
-    setTimeout(function() { clearInterval(poll); showModal('卸载完成', '完成', '卸载操作已完成。'); }, 60000);
+    }, 1500);
+    setTimeout(function() { clearInterval(poll); showModal('卸载完成', '完成', '卸载操作已完成。'); }, 30000);
 }
 
 updateStatus();
