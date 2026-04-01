@@ -188,12 +188,13 @@ function action_service_ctl()
 
 	elseif action == "stop" then
 		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
+		sh("sleep 1; killall -9 clawpanel 2>/dev/null; sleep 1")
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Stopped" })
 
 	elseif action == "restart" then
 		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
-		sh("sleep 2")
+		sh("sleep 1; killall -9 clawpanel 2>/dev/null; sleep 1")
 		sh("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Restarting..." })
