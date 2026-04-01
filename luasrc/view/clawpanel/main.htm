@@ -1,6 +1,89 @@
 <%#
-main.htm - ClawPanel 主页
+main.htm - ClawPanel 主页（服务端渲染状态，无 AJAX）
 -%>
+<%
+local function sh(cmd)
+	local f = io.popen(cmd .. " 2>/dev/null")
+	if not f then return "" end
+	local out = f:read("*a")
+	f:close()
+	return out or ""
+end
+local function trim(s) return (s or ""):gsub("^%s+",""):gsub("%s+$","") end
+
+local uci = require("luci.model.uci").cursor()
+local http = require "luci.http"
+
+local port = uci:get("clawpanel", "main", "port") or "19527"
+local enabled = uci:get("clawpanel", "main", "enabled") or "0"
+local install_path = uci:get("clawpanel", "main", "install_path") or ""
+local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
+
+-- 检测端口是否在监听
+local port_listen_count = trim(sh("ss -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || netstat -tulnp 2>/dev/null | grep -c ':" .. port .. " ' || echo 0"))
+local panel_running = (tonumber(port_listen_count) or 0) > 0
+
+-- 获取 PID
+local pid = ""
+if panel_running then
+	pid = trim(sh("ss -tulnp 2>/dev/null | grep ':" .. port .. " ' | head -1 | sed 's/.*pid=//' | sed 's|/.*||' | awk '{print $1}'"))
+	if pid == "" then
+		pid = trim(sh("netstat -tulnp 2>/dev/null | grep ':" .. port .. " ' | head -1 | sed -n 's|.* \\([0-9]*\\)/.*|\\1|p'"))
+	end
+end
+
+-- 内存占用
+local mem_kb = ""
+if pid ~= "" then
+	mem_kb = trim(sh("awk '/VmRSS/{print $2}' /proc/" .. pid .. "/status 2>/dev/null"))
+end
+
+-- 运行时间
+local uptime = ""
+if pid ~= "" then
+	local start_ts = trim(sh("stat -c %Y /proc/" .. pid .. " 2>/dev/null"))
+	local ts = tonumber(start_ts) or 0
+	if ts > 0 then
+		local up = os.time() - ts
+		local h = math.floor(up / 3600)
+		local m = math.floor((up % 3600) / 60)
+		local s = up % 60
+		if h > 0 then uptime = string.format("%dh %dm %ds", h, m, s)
+		elseif m > 0 then uptime = string.format("%dm %ds", m, s)
+		else uptime = s .. "s" end
+	end
+end
+
+-- 版本
+local panel_ver = ""
+if cp_bin ~= "" and install_path ~= "" then
+	panel_ver = trim(sh(cp_bin .. " --version 2>/dev/null | awk '{print $1}'"))
+	if panel_ver == "" then
+		local vfile = io.open(install_path .. "/clawpanel/.version", "r")
+		if vfile then
+			panel_ver = trim(vfile:read("*a"))
+			vfile:close()
+		end
+	end
+end
+
+-- 磁盘剩余
+local disk_free = ""
+if install_path ~= "" then
+	local parent = install_path:match("^(.*)/[^/]+$") or "/"
+	disk_free = trim(sh("df -h " .. parent .. " 2>/dev/null | tail -1 | awk '{print $4}'"))
+end
+
+-- 状态 badge
+local status_badge = '<span class="cp-badge cp-badge-disabled">未知</span>'
+if panel_running then
+	status_badge = '<span class="cp-badge cp-badge-running">运行中</span>'
+elseif enabled == "1" then
+	status_badge = '<span class="cp-badge cp-badge-stopped">已停止</span>'
+else
+	status_badge = '<span class="cp-badge cp-badge-disabled">未安装</span>'
+end
+%>
 <%+header%>
 
 <style>
@@ -15,7 +98,7 @@ body{padding:20px;font-family:inherit}
 .cp-panel table{width:100%;border-collapse:collapse}
 .cp-panel td{padding:8px 16px;border-bottom:1px solid #f2f2f2;font-size:13px}
 .cp-panel tr:last-child td{border-bottom:none}
-.cp-panel td:first-child{width:120px;color:#888;white-space:nowrap}
+.cp-panel td:first-child{width:130px;color:#888;white-space:nowrap}
 .cp-btn{display:inline-block;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:none;color:#fff}
 .cp-btn-apply{background:#4a90d9}
 .cp-btn-action{background:#6c757d}
@@ -33,20 +116,20 @@ body{padding:20px;font-family:inherit}
 <div style="margin-bottom:14px">
 <div style="font-weight:600;font-size:13px;margin-bottom:8px">选择版本</div>
 <label style="display:block;padding:12px;border:2px solid #4a90d9;border-radius:8px;background:#f0f7ff;margin-bottom:8px;cursor:pointer">
-<input type="radio" name="ver" value="latest" checked> 最新版 (推荐)
+<input type="radio" name="ver" value="latest" checked> 最新版 (Pro，默认)
 </label>
 <label style="display:block;padding:12px;border:2px solid #e0e0e0;border-radius:8px;cursor:pointer">
 <input type="radio" name="ver" value="custom"> 指定版本
-<input type="text" id="ver-custom" placeholder="如: 5.3.3" style="margin-left:8px;padding:4px 8px;border:1px solid #d0d7de;border-radius:4px">
+<input type="text" id="ver-custom" placeholder="如: pro-v5.3.3" style="margin-left:8px;padding:4px 8px;border:1px solid #d0d7de;border-radius:4px">
 </label>
 </div>
 <div style="border-top:1px solid #eee;padding-top:14px">
 <div style="font-weight:600;font-size:13px;margin-bottom:8px">
 安装路径 <span style="color:#cf222e">(必填，外置存储挂载点)</span>
 </div>
-<input type="text" id="f-path" placeholder="/mnt/sda1" value="/mnt/sda1"
+<input type="text" id="f-path" placeholder="/mnt/sda1" value="<%=install_path or '/mnt/sda1'%>"
 style="width:100%;padding:8px 12px;border:1px solid #d0d7de;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:8px">
-<div style="font-size:12px;color:#888;margin-bottom:4px">常见路径: /mnt/sda1、/mnt/sdb1、/mnt/data、/mnt/sata1</div>
+<div style="font-size:12px;color:#888;margin-bottom:4px">常见路径: /mnt/sda1、/mnt/sdb1、/mnt/data</div>
 <div style="font-size:12px;color:#cf222e">禁止: /overlay、/opt、/、/boot、/rom 等系统分区</div>
 </div>
 <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
@@ -78,14 +161,14 @@ style="width:100%;padding:8px 12px;border:1px solid #d0d7de;border-radius:6px;fo
 <div class="cp-panel">
 <div class="cp-panel-title">ClawPanel 服务状态</div>
 <table>
-<tr><td>运行状态</td><td id="s-status"><span class="cp-badge cp-badge-disabled">加载中...</span></td></tr>
-<tr><td>面板服务</td><td id="s-port">-</td></tr>
-<tr><td>进程 PID</td><td id="s-pid">-</td></tr>
-<tr><td>内存占用</td><td id="s-mem">-</td></tr>
-<tr><td>运行时间</td><td id="s-uptime">-</td></tr>
-<tr><td>版本</td><td id="s-ver">-</td></tr>
-<tr><td>安装路径</td><td id="s-path">-</td></tr>
-<tr><td>剩余空间</td><td id="s-disk">-</td></tr>
+<tr><td>运行状态</td><td><%=status_badge%></td></tr>
+<tr><td>面板服务</td><td><%=panel_running and '端口 ' .. port .. ' (监听中)' or '端口 ' .. port .. ' (未监听)'%></td></tr>
+<tr><td>进程 PID</td><td><%=pid ~= "" and pid or '-'%></td></tr>
+<tr><td>内存占用</td><td><%=mem_kb ~= "" and (mem_kb .. ' KB') or '-'%></td></tr>
+<tr><td>运行时间</td><td><%=uptime ~= "" and uptime or '-'%></td></tr>
+<tr><td>版本</td><td><%=panel_ver ~= "" and panel_ver or '-'%></td></tr>
+<tr><td>安装路径</td><td><%=install_path ~= "" and install_path or '-'%></td></tr>
+<tr><td>剩余空间</td><td><%=disk_free ~= "" and disk_free or '-'%></td></tr>
 </table>
 </div>
 
@@ -98,8 +181,6 @@ style="width:100%;padding:8px 12px;border:1px solid #d0d7de;border-radius:6px;fo
 <button class="cp-btn cp-btn-action" onclick="location.reload()" style="float:right">刷新状态</button>
 </div>
 
-<div id="cp-msg" style="margin-bottom:14px;font-size:13px"></div>
-
 <div style="border:1px solid #d0e8ff;background:#f0f7ff;padding:14px 18px;border-radius:6px;line-height:1.8;font-size:13px">
 <strong>使用指南</strong><br/>
 首次使用：点击「安装/重装」输入路径并开始安装<br/>
@@ -108,9 +189,6 @@ style="width:100%;padding:8px 12px;border:1px solid #d0d7de;border-radius:6px;fo
 </div>
 
 <script>
-// 页面每 10 秒自动刷新以更新状态
-setTimeout(function(){location.reload();}, 10000);
-
 function showInstall(){document.getElementById('m-install').classList.add('show')}
 function showUninstall(){document.getElementById('m-uninstall').classList.add('show')}
 function closeModals(){
@@ -120,8 +198,6 @@ function closeModals(){
 document.addEventListener('click',function(e){
 	if(e.target.classList.contains('cp-modal'))closeModals();
 });
-
-function setMsg(html){document.getElementById('cp-msg').innerHTML=html;}
 
 function doInstall(){
 	var path=document.getElementById('f-path').value.trim();
@@ -165,38 +241,6 @@ function doSvc(action){
 	document.body.appendChild(form);
 	form.submit();
 }
-
-// 尝试用 script 标签加载 JSON API（不受 AJAX 限制）
-function loadStatus(){
-	try{
-		var el=document.createElement('script');
-		el.src='<%=luci.dispatcher.build_url("admin", "services", "clawpanel")%>/status_api?callback=updateStatus&r='+Math.random();
-		document.head.appendChild(el);
-	}catch(e){}
-}
-
-function updateStatus(data){
-	if(!data)return;
-	var badgeClass='cp-badge-unknown';
-	var badgeText='未知';
-	if(data.panel_running){
-		badgeClass='cp-badge-running';badgeText='运行中';
-	}else if(data.enabled==='1'){
-		badgeClass='cp-badge-stopped';badgeText='已停止';
-	}else{
-		badgeClass='cp-badge-disabled';badgeText='未安装';
-	}
-	document.getElementById('s-status').innerHTML='<span class="cp-badge '+badgeClass+'">'+badgeText+'</span>';
-	document.getElementById('s-port').textContent=data.port||'-';
-	document.getElementById('s-pid').textContent=data.pid||'-';
-	document.getElementById('s-mem').textContent=data.memory_kb?(data.memory_kb+' KB'):'-';
-	document.getElementById('s-uptime').textContent=data.uptime||'-';
-	document.getElementById('s-ver').textContent=data.panel_version||'-';
-	document.getElementById('s-path').textContent=data.install_path||'-';
-	document.getElementById('s-disk').textContent=data.disk_free||'-';
-}
-
-loadStatus();
 </script>
 
 <%+footer%>
