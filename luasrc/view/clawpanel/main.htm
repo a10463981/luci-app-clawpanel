@@ -298,84 +298,42 @@ function doSvc(action) {
     };
 
     if (action === 'stop') {
-        var m = $('cp-modal');
-        var mt = $('cp-modal-title');
-        var mc = $('cp-modal-log-content');
-        var ms = $('cp-modal-status');
-        var mo = $('cp-modal-okbtn');
-        mt.textContent = titles.stop;
-        mc.innerHTML = '\u6b63\u5728\u505c\u6b62...\n\n';
-        ms.textContent = '\u505c\u6b62\u4e2d...';
-        ms.style.color = '#f0c674';
-        mo.style.display = 'none';
-        m.classList.add('show');
-        var ifrm = document.createElement('iframe'); ifrm.style.display = 'none'; ifrm.name = 'cp_stop_frame';
-        var frm = document.createElement('form'); frm.method = 'GET'; frm.action = BASE + '/service_ctl?action=stop'; frm.target = 'cp_stop_frame';
-        document.body.appendChild(ifrm); document.body.appendChild(frm); frm.submit();
-        var waitTimer = setInterval(function() {
+        var m = $('cp-modal'); var mt = $('cp-modal-title'); var mc = $('cp-modal-log-content'); var ms = $('cp-modal-status'); var mo = $('cp-modal-okbtn');
+        mt.textContent = titles.stop; mc.innerHTML = '\u6b63\u5728\u505c\u6b62...\n\n'; ms.textContent = '\u505c\u6b62\u4e2d...'; ms.style.color = '#f0c674'; mo.style.display = 'none'; m.classList.add('show');
+        window.open(BASE + '/service_ctl?action=stop', '_blank');
+        var pollTimer = setInterval(function() {
             xhr(BASE + '/wait_stopped', function(r) {
-                if (r.state === 'stopped') {
-                    clearInterval(waitTimer);
-                    showModalSuccess(titles.stop, '\u7aef\u53e3\u5df2\u5173\u95ed\u3002ClawPanel \u5df2\u505c\u6b62\u3002');
-                }
+                if (r.state === 'stopped') { clearInterval(pollTimer); mc.innerHTML = '\u7aef\u53e3\u5df2\u5173\u95ed\u3002\nClawPanel \u5df2\u505c\u6b62\u3002\n'; ms.textContent = '\u6210\u529f'; ms.style.color = '#1a7f37'; mo.style.display = 'inline-block'; }
             });
         }, 1000);
-        setTimeout(function() { clearInterval(waitTimer); showModalSuccess(titles.stop, '\u505c\u6b62\u547d\u4ee4\u5df2\u53d1\u9001\uff08\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\uff09\u3002'); }, 35000);
+        setTimeout(function() { clearInterval(pollTimer); mc.innerHTML += '\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\u3002\n'; mo.style.display = 'inline-block'; }, 35000);
 
     } else if (action === 'start') {
-        var m = $('cp-modal');
-        var mt = $('cp-modal-title');
-        var mc = $('cp-modal-log-content');
-        var ms = $('cp-modal-status');
-        var mo = $('cp-modal-okbtn');
-        mt.textContent = titles.start;
-        mc.innerHTML = '\u6b63\u5728\u542f\u52a8...\n\n';
-        ms.textContent = '\u542f\u52a8\u4e2d...';
-        ms.style.color = '#f0c674';
-        mo.style.display = 'none';
-        m.classList.add('show');
-        var ifrm = document.createElement('iframe'); ifrm.style.display = 'none'; ifrm.name = 'cp_start_frame';
-        var frm = document.createElement('form'); frm.method = 'GET'; frm.action = BASE + '/service_ctl?action=start'; frm.target = 'cp_start_frame';
-        document.body.appendChild(ifrm); document.body.appendChild(frm); frm.submit();
-        var waitTimer = setInterval(function() {
+        var m = $('cp-modal'); var mt = $('cp-modal-title'); var mc = $('cp-modal-log-content'); var ms = $('cp-modal-status'); var mo = $('cp-modal-okbtn');
+        mt.textContent = titles.start; mc.innerHTML = '\u6b63\u5728\u542f\u52a8...\n\n'; ms.textContent = '\u542f\u52a8\u4e2d...'; ms.style.color = '#f0c674'; mo.style.display = 'none'; m.classList.add('show');
+        window.open(BASE + '/service_ctl?action=start', '_blank');
+        var pollTimer = setInterval(function() {
             xhr(BASE + '/wait_running', function(r) {
-                if (r.state === 'running') {
-                    clearInterval(waitTimer);
-                    showModalSuccess(titles.start, '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\nClawPanel \u5df2\u542f\u52a8\u3002');
-                }
+                if (r.state === 'running') { clearInterval(pollTimer); mc.innerHTML = '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\nClawPanel \u5df2\u542f\u52a8\u3002\n'; ms.textContent = '\u6210\u529f'; ms.style.color = '#1a7f37'; mo.style.display = 'inline-block'; }
             });
         }, 1000);
-        setTimeout(function() { clearInterval(waitTimer); showModalSuccess(titles.start, '\u542f\u52a8\u547d\u4ee4\u5df2\u53d1\u9001\uff08\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\uff09\u3002'); }, 35000);
+        setTimeout(function() { clearInterval(pollTimer); mc.innerHTML += '\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\u3002\n'; mo.style.display = 'inline-block'; }, 35000);
 
     } else if (action === 'restart') {
-        var m = $('cp-modal');
-        var mt = $('cp-modal-title');
-        var mc = $('cp-modal-log-content');
-        var ms = $('cp-modal-status');
-        var mo = $('cp-modal-okbtn');
-        mt.textContent = titles.restart;
-        mc.innerHTML = '\u6b63\u5728\u91cd\u542f...\n\n';
-        ms.textContent = '\u91cd\u542f\u4e2d...';
-        ms.style.color = '#f0c674';
-        mo.style.display = 'none';
-        m.classList.add('show');
-        var ifrm = document.createElement('iframe'); ifrm.style.display = 'none'; ifrm.name = 'cp_restart_frame';
-        var frm = document.createElement('form'); frm.method = 'GET'; frm.action = BASE + '/service_ctl?action=restart'; frm.target = 'cp_restart_frame';
-        document.body.appendChild(ifrm); document.body.appendChild(frm); frm.submit();
+        var m = $('cp-modal'); var mt = $('cp-modal-title'); var mc = $('cp-modal-log-content'); var ms = $('cp-modal-status'); var mo = $('cp-modal-okbtn');
+        mt.textContent = titles.restart; mc.innerHTML = '\u6b63\u5728\u91cd\u542f...\n\n'; ms.textContent = '\u91cd\u542f\u4e2d...'; ms.style.color = '#f0c674'; mo.style.display = 'none'; m.classList.add('show');
+        window.open(BASE + '/service_ctl?action=restart', '_blank');
         var phase = 'stopping';
-        var waitTimer = setInterval(function() {
+        var pollTimer = setInterval(function() {
             xhr(BASE + (phase === 'stopping' ? '/wait_stopped' : '/wait_running'), function(r) {
                 if (phase === 'stopping' && r.state === 'stopped') {
-                    phase = 'starting';
-                    appendLog('\u7aef\u53e3\u5df2\u5173\u95ed\uff0c\u7b49\u5f85\u91cd\u542f...\n');
-                    setModalStatus('\u7b49\u5f85\u91cd\u542f...', '#f0c674');
+                    phase = 'starting'; mc.innerHTML += '\u7aef\u53e3\u5df2\u5173\u95ed\uff0c\u7b49\u5f85\u91cd\u542f...\n'; ms.textContent = '\u7b49\u5f85\u91cd\u542f...'; ms.style.color = '#f0c674';
                 } else if (phase === 'starting' && r.state === 'running') {
-                    clearInterval(waitTimer);
-                    showModalSuccess(titles.restart, '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\n\u91cd\u542f\u5b8c\u6210\u3002');
+                    clearInterval(pollTimer); mc.innerHTML += '\u7aef\u53e3 19527 \u5df2\u76d1\u542c\uff08PID: ' + r.pid + '\uff09\n\u91cd\u542f\u5b8c\u6210\u3002\n'; ms.textContent = '\u6210\u529f'; ms.style.color = '#1a7f37'; mo.style.display = 'inline-block';
                 }
             });
         }, 1500);
-        setTimeout(function() { clearInterval(waitTimer); showModalSuccess(titles.restart, '\u91cd\u542f\u547d\u4ee4\u5df2\u53d1\u9001\u3002'); }, 60000);
+        setTimeout(function() { clearInterval(pollTimer); mc.innerHTML += '\u7b49\u5f85\u786e\u8ba4\u8d85\u65f6\u3002\n'; mo.style.display = 'inline-block'; }, 60000);
     }
 }
 
@@ -392,22 +350,22 @@ function doUninstall() {
     ms.style.color = '#f0c674';
     mo.style.display = 'none';
     m.classList.add('show');
-    // Trigger uninstall via hidden form in hidden iframe - page stays put
-    var ifrm = document.createElement('iframe');
-    ifrm.style.display = 'none';
-    ifrm.name = 'cp_uninstall_frame';
-    var frm = document.createElement('form');
-    frm.method = 'GET';
-    frm.action = BASE + '/uninstall';
-    frm.target = 'cp_uninstall_frame';
-    document.body.appendChild(ifrm);
-    document.body.appendChild(frm);
-    frm.submit();
-    // Close after 5s and refresh
-    window.setTimeout(function() {
-        m.classList.remove('show');
-        updateStatus();
-    }, 5000);
+    // Open API URL in new tab - it executes there, main page stays put
+    window.open(BASE + '/uninstall', '_blank');
+    // Poll status every 2s until service is fully removed (max 60s)
+    var pollCount = 0;
+    var pollTimer = setInterval(function() {
+        pollCount++;
+        xhr(BASE + '/status_api', function(d) {
+            if (!d.install_path || d.install_path === '' || pollCount > 30) {
+                clearInterval(pollTimer);
+                mc.innerHTML = '\u5378\u8f7d\u5b8c\u6210\uff01\n\u6240\u6709 ClawPanel \u6587\u4ef6\u5df2\u5220\u9664\u3002\n';
+                ms.textContent = '\u6210\u529f';
+                ms.style.color = '#1a7f37';
+                mo.style.display = 'inline-block';
+            }
+        });
+    }, 2000);
 }
 
 updateStatus();
