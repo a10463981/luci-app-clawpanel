@@ -92,18 +92,23 @@ function action_status()
 	result.pid = port_info.pid
 
 	-- Memory and uptime from PID
-	if result.panel_running and result.pid ~= "" then
-		local rss = trim(sh("awk '/VmRSS/{print $2}' /proc/" .. result.pid .. "/status 2>/dev/null"))
-		result.memory_kb = tonumber(rss) or 0
-		local ts = tonumber(trim(sh("stat -c %Y /proc/" .. result.pid .. "/status 2>/dev/null"))) or 0
-		if ts > 0 then
-			local up = os.time() - ts
-			local h = math.floor(up / 3600)
-			local m = math.floor((up % 3600) / 60)
-			local s = up % 60
-			if h > 0 then result.uptime = string.format("%dh %dm %ds", h, m, s)
-			elseif m > 0 then result.uptime = string.format("%dm %ds", m, s)
-			else result.uptime = s .. "s" end
+	if result.panel_running and result.pid and result.pid ~= "" then
+		local pid_num = tonumber(result.pid)
+		if pid_num and pid_num > 0 then
+			local rss_raw = trim(sh("cat /proc/" .. result.pid .. "/status 2>/dev/null | grep VmRSS | awk '{print $2}'"))
+			local ok, rss_val = pcall(tonumber, rss_raw)
+			result.memory_kb = (ok and rss_val) and rss_val or 0
+			local ts_raw = trim(sh("stat -c %Y /proc/" .. result.pid .. "/status 2>/dev/null"))
+			local ok2, ts_val = pcall(tonumber, ts_raw)
+			if ok2 and ts_val and ts_val > 0 then
+				local up = os.time() - ts_val
+				local h = math.floor(up / 3600)
+				local m = math.floor((up % 3600) / 60)
+				local s = up % 60
+				if h > 0 then result.uptime = string.format("%dh %dm %ds", h, m, s)
+				elseif m > 0 then result.uptime = string.format("%dm %ds", m, s)
+				else result.uptime = s .. "s" end
+			end
 		end
 	end
 
