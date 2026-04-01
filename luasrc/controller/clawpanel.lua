@@ -1,4 +1,4 @@
--- luci-app-clawpanel controller with uninstall logging
+-- luci-app-clawpanel controller
 module("luci.controller.clawpanel", package.seeall)
 
 local function sh(cmd)
@@ -32,21 +32,17 @@ function index()
 		call("action_uninstall_log"), nil).leaf = true
 end
 
--- Check if a process is running by PID
 local function is_running(pid)
 	if not pid or pid == "" then return false end
 	return trim(sh("kill -0 " .. pid .. " 2>/dev/null && echo yes || echo no")) == "yes"
 end
 
--- Get port status: returns { listening=true/false, pid="", samples=0 }
 local function check_port(port)
 	local listening = false
 	local pid = ""
-	-- Try netstat first (available on iStoreOS)
 	local line = trim(sh("netstat -tulnp 2>/dev/null | grep ':" .. port .. " ' | head -1"))
 	if line and line ~= "" then
 		listening = true
-		-- Extract PID: number before the "/" character
 		local p = line:match("(%d+)%/%S+")
 		if p and p ~= "" then pid = p end
 	end
@@ -60,12 +56,14 @@ function action_status()
 	local port = uci:get("clawpanel", "main", "port") or "19527"
 	local enabled = uci:get("clawpanel", "main", "enabled") or "0"
 	local install_path = uci:get("clawpanel", "main", "install_path") or ""
+	local openclaw_path = uci:get("clawpanel", "main", "openclaw_path") or ""
 	local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
 
 	local result = {
 		enabled = enabled,
 		port = port,
 		install_path = install_path,
+		openclaw_path = openclaw_path,
 		panel_running = false,
 		pid = "",
 		memory_kb = 0,
@@ -75,12 +73,9 @@ function action_status()
 		disk_free = ""
 	}
 
-	-- ClawPanel version from binary
 	if cp_bin ~= "" and install_path ~= "" then
 		local v = trim(sh(cp_bin .. " --version 2>/dev/null"))
-		if v and v ~= "" then
-			result.panel_version = v
-		end
+		if v and v ~= "" then result.panel_version = v end
 		local vf = io.open(install_path .. "/clawpanel/.version", "r")
 		if vf then
 			result.installed_version = trim(vf:read("*a"))
@@ -88,12 +83,10 @@ function action_status()
 		end
 	end
 
-	-- Port check: netstat is available on iStoreOS
 	local port_info = check_port(port)
 	result.panel_running = port_info.listening
 	result.pid = port_info.pid
 
-	-- Memory and uptime from PID
 	if result.panel_running and result.pid and result.pid ~= "" then
 		local pid_num = tonumber(result.pid)
 		if pid_num and pid_num > 0 then
@@ -114,7 +107,6 @@ function action_status()
 		end
 	end
 
-	-- Disk free space
 	if install_path ~= "" then
 		local disk = trim(sh("df -h '" .. install_path .. "' | tail -1 | awk '{print $4}'"))
 		if disk and disk ~= "" then result.disk_free = disk end
@@ -124,15 +116,13 @@ function action_status()
 	http.write_json(result)
 end
 
--- Wait for port to become LISTEN (for install confirmation)
 function action_wait_running()
 	local http = require "luci.http"
 	local uci = require "luci.model.uci".cursor()
 	local port = uci:get("clawpanel", "main", "port") or "19527"
-
-	local max_wait = 90  -- max 90 seconds
+	local max_wait = 90
 	local waited = 0
-	local interval = 3   -- check every 3 seconds
+	local interval = 3
 
 	while waited < max_wait do
 		local info = check_port(port)
@@ -141,22 +131,18 @@ function action_wait_running()
 			http.write_json({ state = "running", pid = info.pid, waited = waited })
 			return
 		end
-		-- Sleep using shell
 		sh("sleep " .. tostring(interval))
 		waited = waited + interval
 	end
 
-	-- Timeout - port never came up
 	http.prepare_content("application/json")
 	http.write_json({ state = "timeout", pid = "", waited = waited })
 end
 
--- Wait for port to stop listening (for stop/restart confirmation)
 function action_wait_stopped()
 	local http = require "luci.http"
 	local uci = require "luci.model.uci".cursor()
 	local port = uci:get("clawpanel", "main", "port") or "19527"
-
 	local max_wait = 30
 	local waited = 0
 	local interval = 1
@@ -210,16 +196,21 @@ function action_service_ctl()
 		http.write_json({ status = "ok", message = "Disabled" })
 
 	elseif action == "setup" then
-		-- Clean up old state files
 		sh("rm -f /tmp/clawpanel-setup.log /tmp/clawpanel-setup.pid /tmp/clawpanel-setup.exit")
 
 		local version = http.formvalue("version") or ""
 		local install_path = http.formvalue("install_path") or ""
-		-- Sanitize path - remove dangerous chars
 		install_path = install_path:gsub("[`$;&|<>]", ""):gsub("/+$", "")
 
-		-- Save install path to UCI immediately
+		-- Save install path to UCI
 		sh("uci set clawpanel.main.install_path='" .. install_path .. "'; uci commit clawpanel 2>/dev/null")
+
+		-- Save openclaw path to UCI (NEW)
+		local openclaw_path = http.formvalue("openclaw_path") or ""
+		if openclaw_path ~= "" then
+			openclaw_path = openclaw_path:gsub("[`$;&|<>]", ""):gsub("/+$", "")
+			sh("uci set clawpanel.main.openclaw_path='" .. openclaw_path .. "'; uci commit clawpanel 2>/dev/null")
+		end
 
 		local env_prefix = ""
 		if version ~= "" and version ~= "latest" then
@@ -227,7 +218,7 @@ function action_service_ctl()
 		end
 
 		-- Run installation in background, log to /tmp/clawpanel-setup.log
-		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
+		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' " .. env_prefix .. "CP_OPENCLAW_PATH='" .. openclaw_path .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
 
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Installation started, please wait..." })
@@ -266,18 +257,13 @@ function action_setup_log()
 		if ef then
 			local code = trim(ef:read("*a"))
 			ef:close()
-			exit_code = tonumber(code) or -1
+			local ok, val = pcall(tonumber, code)
+			exit_code = (ok and val) and val or -1
 		end
 	end
 
-	-- State determination:
-	-- If still running: check if install success message appears in log
-	-- If exited with 0: success
-	-- If exited with non-zero: failed
 	local state = "idle"
-
 	if running then
-		-- Check if log contains success indicators
 		if log:match("success") or log:match("successful") or log:match("installed") or log:match("安装成功") or log:match("完成") then
 			state = "success"
 		else
@@ -293,12 +279,10 @@ function action_setup_log()
 	http.write_json({ state = state, exit_code = exit_code, log = log })
 end
 
--- NEW: Uninstall with logging
 function action_uninstall()
 	local http = require "luci.http"
 	local uci = require "luci.model.uci".cursor()
 
-	-- Initialize uninstall log
 	local logf = io.open("/tmp/clawpanel-uninstall.log", "w")
 	local function log(msg)
 		if logf then
@@ -343,7 +327,6 @@ function action_uninstall()
 	http.write_json({ status = "ok", message = "ClawPanel fully uninstalled" })
 end
 
--- NEW: Get uninstall log
 function action_uninstall_log()
 	local http = require "luci.http"
 	local log = ""
@@ -354,10 +337,9 @@ function action_uninstall_log()
 		f:close()
 	end
 
-	-- Check if uninstall is complete (install_path is empty)
 	local uci = require "luci.model.uci".cursor()
 	local install_path = uci:get("clawpanel", "main", "install_path") or ""
-	local completed = (install_path == "" or install_path == "/mnt/sda1")
+	local completed = (install_path == "")
 
 	http.prepare_content("application/json")
 	http.write_json({ log = log, completed = completed })
