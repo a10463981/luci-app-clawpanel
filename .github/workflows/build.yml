@@ -1,0 +1,96 @@
+name: Build ipk
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            target: armvirt/64
+            subtarget: default
+            opensdk: openwrt-sdk-armvirt-64_gcc-11.2.0_musl.Linux-x86_64
+          - arch: x86_64
+            target: x86_64
+            subtarget:64
+            opensdk: openwrt-sdk-x86-64_gcc-11.2.0_musl.Linux-x86_64
+          - arch: armv7
+            target: armvirt
+            subtarget:32
+            opensdk: openwrt-sdk-armvirt-32_gcc-11.2.0_musl.Linux-x86_64
+
+    runs-on: ubuntu-latest
+    container: openwrt/sdk:${{ matrix.arch }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Prepare SDK
+        run: |
+          mkdir -p ~/openwrt
+          cd ~/openwrt
+          # Download SDK if not exists
+          SDK_URL="https://downloads.openwrt.org/releases/${{ matrix.opensdk }}.tar.xz"
+          if [ ! -f sdk.tar.xz ]; then
+            wget -q "$SDK_URL" -O sdk.tar.xz || { echo "SDK download failed for ${{ matrix.arch }}"; exit 1; }
+          fi
+          tar xf sdk.tar.xz
+          SDK_DIR=$(ls -d */ | grep -v "^\." | head -1)
+          cd "$SDK_DIR"
+
+          # Add this package to feeds
+          mkdir -p package/luci-app-clawpanel
+          cp -r "$GITHUB_WORKSPACE"/* package/luci-app-clawpanel/
+
+          # Update feeds
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a -p luci
+
+      - name: Build package
+        run: |
+          cd ~/openwrt/*/
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -20
+
+      - name: Find ipk
+        id: find_ipk
+        run: |
+          find ~/openwrt -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | tee ipk_list.txt
+          echo "count=$(wc -l < ipk_list.txt)" >> $GITHUB_OUTPUT
+
+      - name: Upload ipk artifact
+        if: steps.find_ipk.outputs.count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-clawpanel-${{ matrix.arch }}
+          path: ~/openwrt/*/bin/packages/*/luci/luci-app-clawpanel_*.ipk
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: ls -lh artifacts/
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for f in artifacts/**/*.ipk; do
+            [ -f "$f" ] || continue
+            echo "Uploading: $f"
+            gh release upload "${{ github.event.release.tag_name }}" "$f" --clobber
+          done
