@@ -182,8 +182,29 @@ do_setup() {
     # 启动 ClawPanel（init 脚本会在启动前再次写入正确的 clawpanel.json）
     echo "Starting ClawPanel..."
     /etc/init.d/clawpanel enable 2>/dev/null || true
-    /etc/init.d/clawpanel start >/dev/null 2>&1 &
-    # 不等待服务启动，由 controller 的 /wait_running 轮询负责检测
+
+    # 先停掉旧进程
+    killall -9 clawpanel 2>/dev/null || true
+
+    # 等待端口释放
+    local i=0
+    while [ $i -lt 15 ]; do
+        if ! netstat -tulnp 2>/dev/null | grep -q ":${cp_port} " ; then
+            break
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+
+    # 读取版本号（去掉 pro- 前缀，因为 clawpanel --updater-standalone 不识别）
+    local cp_ver
+    cp_ver=$(cat "${cp_install_path}/.version" 2>/dev/null | tr -d '[:space:]' | sed 's/^pro-v//;s/^lite-v//')
+    [ -z "$cp_ver" ] && cp_ver="5.3.3"
+
+    # 直接 nohup 启动，比 init.d 更可靠（init.d 在 SSH 后台场景下 procd 可能丢进程）
+    nohup "${cp_binary}" --updater-standalone "$cp_ver" "$cp_data" "$cp_port" "$openclaw_dir" \
+        > /tmp/clawpanel_startup.log 2>&1 &
+    echo "Service PID: $!"
 
     echo ""
     echo "=== Installation Complete ==="
