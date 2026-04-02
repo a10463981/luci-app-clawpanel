@@ -38,6 +38,9 @@ check_disk() {
             echo "Error: not enough disk space. Available ${avail_mb}MB, need ${needed_mb}MB"
             return 1
         fi
+    else
+        echo "Error: path does not exist: $path"
+        return 1
     fi
 }
 
@@ -47,7 +50,7 @@ is_elf() {
     first4=$(od -An -tx1 -N4 "$1" 2>/dev/null | tr -d ' \n\r')
     [ -n "$first4" ] || first4=$(od -A n -t x1 -N 4 "$1" 2>/dev/null | tr -d ' \n\r')
     [ "$first4" = "7f454c46" ] && return 0
-    # Fallback: large file is likely a real binary
+    # Fallback: large file is likely a real binary (don't fail the script)
     local fsize
     fsize=$(wc -c < "$1" 2>/dev/null || echo 0)
     [ -n "$fsize" ] && [ "$fsize" -gt 20000000 ]
@@ -60,9 +63,15 @@ get_latest_pro_version() {
     fi
     local ver
     ver=$(curl -sL --max-time 10 \
-        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" 2>/dev/null \
-        | grep '"tag_name"' | cut -d'"' -f4 | grep '^pro-' | head -1 || true)
+        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" \
+        | grep -o '"tag_name"[^,]*' \
+        | grep '"tag_name"' \
+        | head -1 \
+        | cut -d'"' -f4 \
+        | grep '^pro-' \
+        || true)
     if [ -z "$ver" ]; then
+        echo "Error: failed to fetch latest version from GitHub API (network issue or rate limit)" >&2
         printf '%s' "pro-v5.3.3"
     else
         printf '%s' "$ver"
@@ -116,11 +125,11 @@ do_setup() {
     local cp_install_path="${CP_BASE_PATH}/clawpanel"
     local cp_data="${cp_install_path}/data"
     local cp_binary="${cp_install_path}/clawpanel"
-    local cp_port="${CP_PORT:-19527}"
-    # OpenClaw 目录：如果环境变量未设置，自动推导为 <install_path>/.openclaw
+    # OpenClaw 目录：优先使用环境变量指定值，否则默认放在安装路径下
     local openclaw_dir="${CP_OPENCLAW_DIR:-${CP_BASE_PATH}/.openclaw}"
-    local openclaw_app="${CP_BASE_PATH}/clawpanel/app"
-    local openclaw_work="${CP_BASE_PATH}/clawpanel/work"
+    local openclaw_app="${cp_install_path}/app"
+    local openclaw_work="${cp_install_path}/work"
+    local cp_port="19527"
 
     echo "=== ClawPanel Setup ==="
     echo "Install path: $cp_install_path"
@@ -132,7 +141,7 @@ do_setup() {
     echo "Architecture: $CP_ARCH"
 
     check_disk "$CP_BASE_PATH" 100 || exit 1
-    mkdir -p "$CP_BASE_PATH" "$cp_install_path" "$cp_data" "${CP_BASE_PATH}/.openclaw" "$openclaw_app" "$openclaw_work"
+    mkdir -p "$CP_BASE_PATH" "$cp_install_path" "$cp_data" "$openclaw_dir" "$openclaw_app" "$openclaw_work"
 
     echo "Detecting latest pro version..."
     local version
