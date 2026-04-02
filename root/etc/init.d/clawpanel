@@ -48,22 +48,21 @@ start_service() {
 
     # Ensure clawpanel.json has correct paths BEFORE ClawPanel starts.
     # ClawPanel may regenerate this file on first boot, so write it now.
-    cat > "$CP_DATA/clawpanel.json" <<'JEOF'
-{
-  "port": ${port},
-  "dataDir": "${CP_DATA}",
-  "openClawDir": "${CP_OPENCLAW_DIR}",
-  "openClawApp": "${CP_INSTALL_PATH}/app",
-  "openClawWork": "${CP_INSTALL_PATH}/work",
-  "edition": "pro",
-  "jwtSecret": "clawpanel-secret-change-me",
-  "adminToken": "clawpanel",
-  "debug": false
-}
-JEOF
-
+    # Use printf instead of heredoc to properly expand shell variables.
     port=$(echo "$port" | tr -cd '0-9')
     [ -z "$port" ] && port=19527
+
+    printf '{\n' > "$CP_DATA/clawpanel.json"
+    printf '  "port": %s,\n' "$port" >> "$CP_DATA/clawpanel.json"
+    printf '  "dataDir": "%s",\n' "$CP_DATA" >> "$CP_DATA/clawpanel.json"
+    printf '  "openClawDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "$CP_DATA/clawpanel.json"
+    printf '  "openClawApp": "%s",\n' "${CP_INSTALL_PATH}/app" >> "$CP_DATA/clawpanel.json"
+    printf '  "openClawWork": "%s",\n' "${CP_INSTALL_PATH}/work" >> "$CP_DATA/clawpanel.json"
+    printf '  "edition": "pro",\n' >> "$CP_DATA/clawpanel.json"
+    printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "$CP_DATA/clawpanel.json"
+    printf '  "adminToken": "clawpanel",\n' >> "$CP_DATA/clawpanel.json"
+    printf '  "debug": false\n' >> "$CP_DATA/clawpanel.json"
+    printf '}\n' >> "$CP_DATA/clawpanel.json"
 
     # Kill old instances
     for pid in $(pgrep -f "clawpanel" 2>/dev/null); do
