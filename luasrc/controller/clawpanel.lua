@@ -198,20 +198,47 @@ function action_service_ctl()
 	local action = http.formvalue("action") or ""
 
 	if action == "start" then
-		sh("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
+		local install_path = uci:get("clawpanel", "main", "install_path") or ""
+		local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
+		local cp_data = install_path ~= "" and (install_path .. "/clawpanel/data") or ""
+		local port = uci:get("clawpanel", "main", "port") or "19527"
+		local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or (install_path .. "/.openclaw")
+		local cp_ver = "5.3.3"
+		local vf = io.open(install_path .. "/clawpanel/.version", "r")
+		if vf then
+			local fver = trim(vf:read("*a"))
+			vf:close()
+			if fver ~= "" then
+				cp_ver = fver:gsub("^pro%-v", ""):gsub("^lite%-v", "")
+			end
+		end
+		-- 直接用nohup启动，不走init.d（init.d在SSH后台场景会被SIGHUP杀掉）
+		sh("(export HOME=/root; nohup " .. cp_bin .. " --updater-standalone " .. cp_ver .. " " .. cp_data .. " " .. port .. " " .. openclaw_dir .. " >/tmp/clawpanel.log 2>&1&)")
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Starting..." })
 
 	elseif action == "stop" then
-		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
-		sh("sleep 1; killall -9 clawpanel 2>/dev/null; sleep 1")
+		sh("killall -9 clawpanel 2>/dev/null")
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Stopped" })
 
 	elseif action == "restart" then
-		sh("/etc/init.d/clawpanel stop >/dev/null 2>&1")
-		sh("sleep 1; killall -9 clawpanel 2>/dev/null; sleep 1")
-		sh("/etc/init.d/clawpanel start >/dev/null 2>&1 &")
+		local install_path = uci:get("clawpanel", "main", "install_path") or ""
+		local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
+		local cp_data = install_path ~= "" and (install_path .. "/clawpanel/data") or ""
+		local port = uci:get("clawpanel", "main", "port") or "19527"
+		local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or (install_path .. "/.openclaw")
+		local cp_ver = "5.3.3"
+		local vf = io.open(install_path .. "/clawpanel/.version", "r")
+		if vf then
+			local fver = trim(vf:read("*a"))
+			vf:close()
+			if fver ~= "" then
+				cp_ver = fver:gsub("^pro%-v", ""):gsub("^lite%-v", "")
+			end
+		end
+		sh("killall -9 clawpanel 2>/dev/null; sleep 1")
+		sh("(export HOME=/root; nohup " .. cp_bin .. " --updater-standalone " .. cp_ver .. " " .. cp_data .. " " .. port .. " " .. openclaw_dir .. " >/tmp/clawpanel.log 2>&1&)")
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Restarting..." })
 
