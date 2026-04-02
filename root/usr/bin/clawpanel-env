@@ -163,7 +163,7 @@ do_setup() {
     uci set clawpanel.main.openclaw_dir="$openclaw_dir"
     uci set clawpanel.main.port="$cp_port"
     uci set clawpanel.main.version="$actual_ver"
-    uci commit clawpanel
+    uci commit clawpanel 2>/dev/null || true
 
     # 用 printf 写 clawpanel.json（避免 heredoc 的变量展开问题）
     printf '{\n' > "${cp_data}/clawpanel.json"
@@ -182,7 +182,10 @@ do_setup() {
     # 启动 ClawPanel（init 脚本会在启动前再次写入正确的 clawpanel.json）
     echo "Starting ClawPanel..."
     /etc/init.d/clawpanel enable 2>/dev/null || true
-    /etc/init.d/clawpanel start >/dev/null 2>&1 || true
+    # 启动必须后台化：procd start 在 init.d 里会阻塞等待服务真正启动/失败，
+    # 在 setup 脚本里同步等待会触发 set -e 异常退出，导致 exit code 丢失。
+    /etc/init.d/clawpanel start >/dev/null 2>&1 &
+    true  # 确保 set -e 下不会中途退出
 
     echo ""
     echo "=== Installation Complete ==="
