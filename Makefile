@@ -9,7 +9,7 @@ PKG_NAME:=luci-app-clawpanel
 PKG_VERSION:=$(strip $(shell cat $(CURDIR)/VERSION 2>/dev/null || echo "1.0.0"))
 PKG_RELEASE:=1
 
-PKG_MAINTAINER:=Your Name <your@email>
+PKG_MAINTAINER:=a10463981 <a10463981@users.noreply.github.com>
 PKG_LICENSE:=CC-BY-NC-SA-4.0
 
 LUCI_TITLE:=ClawPanel AI 管理面板 LuCI 插件
