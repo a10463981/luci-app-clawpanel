@@ -57,11 +57,17 @@ LuCI → 系统 → 挂载点 → 挂载已连接的 USB 硬盘
 
 ## 安装方式
 
-### 方式一：OPKG 安装（推荐）
+### 方式一：OPKG 安装（推荐，稳定版）
+
+ipk 安装包在 GitHub Release 发布后可用。构建完成后从以下地址下载：
+
+👉 https://github.com/a10463981/luci-app-clawpanel/releases/latest
+
+下载对应架构的 ipk 文件，上传到路由器安装：
 
 ```bash
-# 1. 将 ipk 文件上传到路由器（用 scp 或 U 盘）
-scp luci-app-clawpanel_*.ipk root@192.168.1.1:/tmp/
+# 1. 上传 ipk 到路由器
+scp luci-app-clawpanel_aarch64_*.ipk root@192.168.1.1:/tmp/
 
 # 2. SSH 登录路由器后执行安装
 opkg install /tmp/luci-app-clawpanel_*.ipk
@@ -70,33 +76,52 @@ opkg install /tmp/luci-app-clawpanel_*.ipk
 /etc/init.d/luci reload
 ```
 
-### 方式二：直接 git 克隆（无需编译）
+### 方式二：GitHub Actions 构建产物（最新版）
 
-适合路由器上有 git 的情况：
+CI 每次 main 分支 push 会自动构建三个架构的 ipk（未经正式发布，仅测试用）：
+
+1. 打开 Actions 页面：https://github.com/a10463981/luci-app-clawpanel/actions
+2. 选择最新一次 workflow run
+3. 下载对应架构的 artifact（ipk 文件）
+4. 通过 LuCI 上传安装：`系统 → 备份与升级 → 上传`
+
+### 方式三：手动文件部署（适用于干净系统）
+
+**适合场景**：路由器没有 git，且 Release 暂无 ipk 文件。
+
+**操作步骤**：
 
 ```bash
-# SSH 登录路由器后执行
-cd /tmp
+# 在本地电脑克隆仓库
 git clone https://github.com/a10463981/luci-app-clawpanel.git
 cd luci-app-clawpanel
-chmod +x root/usr/bin/clawpanel-env
-cp -r root/* /
+
+# 将文件上传到路由器（所有文件上传到 /overlay/upper/）
+scp root/etc/init.d/clawpanel root@192.168.1.1:/overlay/upper/etc/init.d/clawpanel
+scp root/etc/config/clawpanel root@192.168.1.1:/overlay/upper/etc/config/clawpanel
+scp root/etc/uci-defaults/99-clawpanel root@192.168.1.1:/overlay/upper/etc/uci-defaults/99-clawpanel
+scp root/usr/bin/clawpanel-env root@192.168.1.1:/overlay/upper/usr/bin/clawpanel-env
+scp -r luasrc/usr/lib/lua/luci/controller/clawpanel.lua root@192.168.1.1:/overlay/upper/usr/lib/lua/luci/controller/clawpanel.lua
+scp -r luasrc/usr/lib/lua/luci/model/cbi/clawpanel root@192.168.1.1:/overlay/upper/usr/lib/lua/luci/model/cbi/clawpanel
+scp -r luasrc/usr/lib/lua/luci/view/clawpanel root@192.168.1.1:/overlay/upper/usr/lib/lua/luci/view/clawpanel
+scp VERSION root@192.168.1.1:/overlay/upper/usr/share/clawpanel/VERSION
+
+# SSH 登录路由器，添加执行权限
+chmod +x /overlay/upper/etc/init.d/clawpanel
+chmod +x /overlay/upper/usr/bin/clawpanel-env
+
+# 初始化 UCI 配置
+chmod +x /overlay/upper/etc/uci-defaults/99-clawpanel
+/overlay/upper/etc/uci-defaults/99-clawpanel
+
+# 清除 LuCI 缓存
+rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null
+
+# 重启 LuCI
 /etc/init.d/luci reload
 ```
 
-### 方式三：源码编译（开发者）
-
-需要 OpenWrt SDK：
-
-```bash
-# 克隆到 SDK package 目录
-git clone https://github.com/a10463981/luci-app-clawpanel.git \
-  package/luci-app-clawpanel
-
-# 编译
-cd $SDK_DIR
-make package/luci-app-clawpanel/compile V=s
-```
+> ⚠️ **必须上传到 `/overlay/upper/`**（持久化层），禁止直接上传到 `/` 或 `/tmp`，否则重启后文件丢失。
 
 ---
 

@@ -2,95 +2,185 @@ name: Build ipk
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Architecture (aarch64/x86_64/armv7)'
+        required: false
+        default: 'all'
+
+env:
+  SDK_VERSION: "23.05.5"
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: aarch64
-            target: armvirt/64
-            subtarget: default
-            opensdk: openwrt-sdk-armvirt-64_gcc-11.2.0_musl.Linux-x86_64
-          - arch: x86_64
-            target: x86_64
-            subtarget:64
-            opensdk: openwrt-sdk-x86-64_gcc-11.2.0_musl.Linux-x86_64
-          - arch: armv7
-            target: armvirt
-            subtarget:32
-            opensdk: openwrt-sdk-armvirt-32_gcc-11.2.0_musl.Linux-x86_64
-
-    runs-on: ubuntu-latest
-    container: openwrt/sdk:${{ matrix.arch }}
-
+  build-aarch64:
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Prepare SDK
+      - name: Install deps
         run: |
-          mkdir -p ~/openwrt
-          cd ~/openwrt
-          # Download SDK if not exists
-          SDK_URL="https://downloads.openwrt.org/releases/${{ matrix.opensdk }}.tar.xz"
-          if [ ! -f sdk.tar.xz ]; then
-            wget -q "$SDK_URL" -O sdk.tar.xz || { echo "SDK download failed for ${{ matrix.arch }}"; exit 1; }
-          fi
-          tar xf sdk.tar.xz
-          SDK_DIR=$(ls -d */ | grep -v "^\." | head -1)
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gcc gawk \
+            libncurses5-dev libssl-dev perl-base python3 python3-distutils python3-yaml \
+            rsync unzip wget xz-utils file 2>&1 | tail -3
+
+      - name: Download SDK
+        run: |
+          mkdir -p /opt/sdk
+          wget -q "https://downloads.openwrt.org/releases/${{ env.SDK_VERSION }}/targets/armvirt/64/openwrt-sdk-${{ env.SDK_VERSION }}-armvirt-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
+            -O /tmp/sdk.tar.xz 2>&1 | tail -3
+          tar xf /tmp/sdk.tar.xz -C /opt/sdk 2>&1 | tail -3
+          ls /opt/sdk/
+
+      - name: Prepare
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
           cd "$SDK_DIR"
+          ./scripts/feeds update -a 2>&1 | tail -5
+          ./scripts/feeds install -a -p luci 2>&1 | tail -5
 
-          # Add this package to feeds
-          mkdir -p package/luci-app-clawpanel
-          cp -r "$GITHUB_WORKSPACE"/* package/luci-app-clawpanel/
-
-          # Update feeds
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a -p luci
-
-      - name: Build package
+      - name: Build
         run: |
-          cd ~/openwrt/*/
-          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -20
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cd "$SDK_DIR"
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
 
-      - name: Find ipk
-        id: find_ipk
+      - name: Find artifact
+        id: find
         run: |
-          find ~/openwrt -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | tee ipk_list.txt
-          echo "count=$(wc -l < ipk_list.txt)" >> $GITHUB_OUTPUT
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          IPK=$(find "$SDK_DIR" -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | head -1)
+          echo "ipk=$IPK"
+          echo "ipk=$IPK" >> $GITHUB_OUTPUT
 
-      - name: Upload ipk artifact
-        if: steps.find_ipk.outputs.count != '0'
+      - name: Upload artifact
+        if: steps.find.outputs.ipk != ''
         uses: actions/upload-artifact@v4
         with:
-          name: luci-app-clawpanel-${{ matrix.arch }}
-          path: ~/openwrt/*/bin/packages/*/luci/luci-app-clawpanel_*.ipk
+          name: luci-app-clawpanel-aarch64
+          path: ${{ steps.find.outputs.ipk }}
+
+  build-x86_64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gcc gawk \
+            libncurses5-dev libssl-dev perl-base python3 python3-distutils python3-yaml \
+            rsync unzip wget xz-utils file 2>&1 | tail -3
+
+      - name: Download SDK
+        run: |
+          mkdir -p /opt/sdk
+          wget -q "https://downloads.openwrt.org/releases/${{ env.SDK_VERSION }}/targets/x86/64/openwrt-sdk-${{ env.SDK_VERSION }}-x86-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
+            -O /tmp/sdk.tar.xz 2>&1 | tail -3
+          tar xf /tmp/sdk.tar.xz -C /opt/sdk 2>&1 | tail -3
+
+      - name: Prepare
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
+          cd "$SDK_DIR"
+          ./scripts/feeds update -a 2>&1 | tail -5
+          ./scripts/feeds install -a -p luci 2>&1 | tail -5
+
+      - name: Build
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cd "$SDK_DIR"
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
+
+      - name: Find artifact
+        id: find
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          IPK=$(find "$SDK_DIR" -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | head -1)
+          echo "ipk=$IPK" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        if: steps.find.outputs.ipk != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-clawpanel-x86_64
+          path: ${{ steps.find.outputs.ipk }}
+
+  build-armv7:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gcc gawk \
+            libncurses5-dev libssl-dev perl-base python3 python3-distutils python3-yaml \
+            rsync unzip wget xz-utils file 2>&1 | tail -3
+
+      - name: Download SDK
+        run: |
+          mkdir -p /opt/sdk
+          wget -q "https://downloads.openwrt.org/releases/${{ env.SDK_VERSION }}/targets/armvirt/32/openwrt-sdk-${{ env.SDK_VERSION }}-armvirt-32_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
+            -O /tmp/sdk.tar.xz 2>&1 | tail -3
+          tar xf /tmp/sdk.tar.xz -C /opt/sdk 2>&1 | tail -3
+
+      - name: Prepare
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
+          cd "$SDK_DIR"
+          ./scripts/feeds update -a 2>&1 | tail -5
+          ./scripts/feeds install -a -p luci 2>&1 | tail -5
+
+      - name: Build
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cd "$SDK_DIR"
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
+
+      - name: Find artifact
+        id: find
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          IPK=$(find "$SDK_DIR" -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | head -1)
+          echo "ipk=$IPK" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        if: steps.find.outputs.ipk != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-clawpanel-armv7
+          path: ${{ steps.find.outputs.ipk }}
 
   release:
-    needs: build
-    runs-on: ubuntu-latest
+    needs: [build-aarch64, build-x86_64, build-armv7]
+    runs-on: ubuntu-22.04
     if: github.event_name == 'release'
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: false
 
-      - name: List artifacts
-        run: ls -lh artifacts/
+      - name: List
+        run: |
+          ls -lh artifacts/
+          find artifacts/ -name "*.ipk" -type f
 
-      - name: Upload to release
+      - name: Upload to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for f in artifacts/**/*.ipk; do
-            [ -f "$f" ] || continue
-            echo "Uploading: $f"
-            gh release upload "${{ github.event.release.tag_name }}" "$f" --clobber
+          TAG="${{ github.event.release.tag_name }}"
+          find artifacts/ -name "*.ipk" -type f | while read f; do
+            echo "Uploading: $f -> $TAG"
+            gh release upload "$TAG" "$f" --clobber 2>&1
           done
