@@ -18,7 +18,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential clang flex bison g++ gcc gawk \
             libncurses5-dev libssl-dev perl-base python3 python3-distutils python3-yaml \
-            rsync unzip wget xz-utils file 2>&1 | tail -3
+            rsync unzip wget xz-utils file bc 2>&1 | tail -3
 
       - name: Download SDK
         run: |
@@ -30,8 +30,10 @@ jobs:
       - name: Prepare
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
-          cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
+          cp -r "${{ github.workspace }}/." "$SDK_DIR/package/luci-app-clawpanel/"
           cd "$SDK_DIR"
+          # Generate .config (silence the ncurses terminal error)
+          make defconfig 2>/dev/null || true
           ./scripts/feeds update -a 2>&1 | tail -3
           ./scripts/feeds install -a -p luci 2>&1 | tail -5
 
@@ -39,7 +41,7 @@ jobs:
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cd "$SDK_DIR"
-          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -30
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
 
       - name: Find artifact
         id: find
@@ -47,6 +49,7 @@ jobs:
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           IPK=$(find "$SDK_DIR" -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | head -1)
           echo "ipk=$IPK" >> $GITHUB_OUTPUT
+          echo "Found: $IPK"
 
       - name: Upload artifact
         if: steps.find.outputs.ipk != ''
@@ -65,7 +68,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential clang flex bison g++ gcc gawk \
             libncurses5-dev libssl-dev perl-base python3 python3-distutils python3-yaml \
-            rsync unzip wget xz-utils file 2>&1 | tail -3
+            rsync unzip wget xz-utils file bc 2>&1 | tail -3
 
       - name: Download SDK
         run: |
@@ -77,8 +80,9 @@ jobs:
       - name: Prepare
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
-          cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
+          cp -r "${{ github.workspace }}/." "$SDK_DIR/package/luci-app-clawpanel/"
           cd "$SDK_DIR"
+          make defconfig 2>/dev/null || true
           ./scripts/feeds update -a 2>&1 | tail -3
           ./scripts/feeds install -a -p luci 2>&1 | tail -5
 
@@ -86,7 +90,7 @@ jobs:
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cd "$SDK_DIR"
-          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -30
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
 
       - name: Find artifact
         id: find
@@ -112,7 +116,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential clang flex bison g++ gcc gawk \
             libncurses5-dev libssl-dev perl-base python3 python3-distutils python3-yaml \
-            rsync unzip wget xz-utils file 2>&1 | tail -3
+            rsync unzip wget xz-utils file bc 2>&1 | tail -3
 
       - name: Download SDK
         run: |
@@ -124,8 +128,9 @@ jobs:
       - name: Prepare
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
-          cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
+          cp -r "${{ github.workspace }}/." "$SDK_DIR/package/luci-app-clawpanel/"
           cd "$SDK_DIR"
+          make defconfig 2>/dev/null || true
           ./scripts/feeds update -a 2>&1 | tail -3
           ./scripts/feeds install -a -p luci 2>&1 | tail -5
 
@@ -133,7 +138,7 @@ jobs:
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cd "$SDK_DIR"
-          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -30
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
 
       - name: Find artifact
         id: find
@@ -159,11 +164,6 @@ jobs:
         with:
           path: artifacts
           merge-multiple: false
-
-      - name: List
-        run: |
-          ls -lh artifacts/
-          find artifacts/ -name "*.ipk" -type f
 
       - name: Upload to Release
         env:
