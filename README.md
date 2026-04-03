@@ -1,6 +1,6 @@
 # luci-app-clawpanel
 
-**OpenWrt / iStoreOS LuCI 管理插件 — ClawPanel 可视化面板**
+**OpenWrt / iStoreOS LuCI 管理插件 — ClawPanel 可视化面板 / Ai Openclaw **
 
 通过 LuCI 网页后台，在 OpenWrt / iStoreOS 路由器上一键安装、启停、升级和卸载 ClawPanel（OpenClaw AI 助手管理面板）。
 
