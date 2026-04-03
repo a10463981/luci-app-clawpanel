@@ -49,38 +49,32 @@ start_service() {
     port=$(echo "$port" | tr -cd '0-9')
     [ -z "$port" ] && port=19527
 
-    # Write clawpanel.json using printf (heredoc with 'EOF' would not expand variables)
-    printf '{\n' > "$CP_DATA/clawpanel.json"
-    printf '  "port": %s,\n' "$port" >> "$CP_DATA/clawpanel.json"
-    printf '  "dataDir": "%s",\n' "$CP_DATA" >> "$CP_DATA/clawpanel.json"
-    printf '  "openClawDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "$CP_DATA/clawpanel.json"
-    printf '  "openClawApp": "%s",\n' "${CP_INSTALL_PATH}/app" >> "$CP_DATA/clawpanel.json"
-    printf '  "openClawWork": "%s",\n' "${CP_INSTALL_PATH}/work" >> "$CP_DATA/clawpanel.json"
-    printf '  "edition": "pro",\n' >> "$CP_DATA/clawpanel.json"
-    printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "$CP_DATA/clawpanel.json"
-    printf '  "adminToken": "clawpanel",\n' >> "$CP_DATA/clawpanel.json"
-    printf '  "debug": false\n' >> "$CP_DATA/clawpanel.json"
-    printf '}\n' >> "$CP_DATA/clawpanel.json"
+    # Only write clawpanel.json if it doesn't exist yet, to preserve user-modified values
+    if [ ! -f "$CP_DATA/clawpanel.json" ]; then
+        mkdir -p "$CP_DATA" 2>/dev/null
+        printf '{\n' > "$CP_DATA/clawpanel.json"
+        printf '  "port": %s,\n' "$port" >> "$CP_DATA/clawpanel.json"
+        printf '  "dataDir": "%s",\n' "$CP_DATA" >> "$CP_DATA/clawpanel.json"
+        printf '  "openClawDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "$CP_DATA/clawpanel.json"
+        printf '  "openClawApp": "%s",\n' "${CP_INSTALL_PATH}/app" >> "$CP_DATA/clawpanel.json"
+        printf '  "openClawWork": "%s",\n' "${CP_INSTALL_PATH}/work" >> "$CP_DATA/clawpanel.json"
+        printf '  "edition": "pro",\n' >> "$CP_DATA/clawpanel.json"
+        printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "$CP_DATA/clawpanel.json"
+        printf '  "adminToken": "clawpanel",\n' >> "$CP_DATA/clawpanel.json"
+        printf '  "debug": false\n' >> "$CP_DATA/clawpanel.json"
+        printf '}\n' >> "$CP_DATA/clawpanel.json"
+    fi
 
     # Stop any existing instances first
     stop_service
 
-    # Read version (strip pro- prefix for --updater-standalone)
-    local cp_ver
-    if [ -f "${CP_INSTALL_PATH}/.version" ]; then
-        cp_ver=$(cat "${CP_INSTALL_PATH}/.version" 2>/dev/null | tr -d '[:space:]' | sed 's/^pro-v//;s/^lite-v//')
-    fi
-    [ -z "$cp_ver" ] && cp_ver="5.3.3"
+    echo "Starting ClawPanel: $CP_BIN (data=$CP_DATA, port=$port)"
 
-    echo "Starting ClawPanel: $CP_BIN --updater-standalone $cp_ver $CP_DATA $port $CP_OPENCLAW_DIR"
-
-    # Use procd to manage the service (works in OpenWrt boot context)
-    # In SSH background context procd may lose the child, so we also spawn directly
+    # Use nohup directly (procd loses children in SSH background context)
     # shellcheck disable=SC2163
     (
         export HOME="/root"
-        nohup "$CP_BIN" --updater-standalone "$cp_ver" "$CP_DATA" "$port" "$CP_OPENCLAW_DIR" \
-            >> /tmp/clawpanel.log 2>&1 &
+        nohup "$CP_BIN" >> /tmp/clawpanel.log 2>&1 &
     )
 
     # Brief wait then verify port is listening

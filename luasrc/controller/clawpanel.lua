@@ -56,6 +56,12 @@ function index()
 		call("action_uninstall"), nil).leaf = true
 	entry({"admin", "services", "clawpanel", "uninstall_log"},
 		call("action_uninstall_log"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "mounts"},
+		call("action_mounts"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "check_system"},
+		call("action_check_system"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "check_update"},
+		call("action_check_update"), nil).leaf = true
 end
 
 local function is_running(pid)
@@ -200,18 +206,6 @@ function action_service_ctl()
 	if action == "start" then
 		local install_path = uci:get("clawpanel", "main", "install_path") or ""
 		local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
-		local cp_data = install_path ~= "" and (install_path .. "/clawpanel/data") or ""
-		local port = uci:get("clawpanel", "main", "port") or "19527"
-		local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or (install_path .. "/.openclaw")
-		local cp_ver = "5.3.3"
-		local vf = io.open(install_path .. "/clawpanel/.version", "r")
-		if vf then
-			local fver = trim(vf:read("*a"))
-			vf:close()
-			if fver ~= "" then
-				cp_ver = fver:gsub("^pro%-v", ""):gsub("^lite%-v", "")
-			end
-		end
 		-- 直接用nohup启动，不走init.d（init.d在SSH后台场景会被SIGHUP杀掉）
 		sh("(export HOME=/root; nohup " .. cp_bin .. " >/tmp/clawpanel.log 2>&1&)")
 		http.prepare_content("application/json")
@@ -225,18 +219,6 @@ function action_service_ctl()
 	elseif action == "restart" then
 		local install_path = uci:get("clawpanel", "main", "install_path") or ""
 		local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
-		local cp_data = install_path ~= "" and (install_path .. "/clawpanel/data") or ""
-		local port = uci:get("clawpanel", "main", "port") or "19527"
-		local openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or (install_path .. "/.openclaw")
-		local cp_ver = "5.3.3"
-		local vf = io.open(install_path .. "/clawpanel/.version", "r")
-		if vf then
-			local fver = trim(vf:read("*a"))
-			vf:close()
-			if fver ~= "" then
-				cp_ver = fver:gsub("^pro%-v", ""):gsub("^lite%-v", "")
-			end
-		end
 		sh("killall -9 clawpanel 2>/dev/null; sleep 1")
 		sh("(export HOME=/root; nohup " .. cp_bin .. " >/tmp/clawpanel.log 2>&1&)")
 		http.prepare_content("application/json")
@@ -257,7 +239,7 @@ function action_service_ctl()
 
 		local version = http.formvalue("version") or ""
 		local install_path = http.formvalue("install_path") or ""
-		install_path = install_path:gsub("[^%w%-%./]", ""):gsub("/+$", "")
+		install_path = install_path:gsub("[^%w%-%./]", ""):gsub("/+$", ""):gsub("%.%.", "")
 
 		if install_path == "" then
 			http.prepare_content("application/json")
@@ -266,7 +248,7 @@ function action_service_ctl()
 		end
 
 		local openclaw_dir = http.formvalue("openclaw_dir") or ""
-		openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", "")
+		openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", ""):gsub("%.%.", "")
 		if openclaw_dir == "" then
 			openclaw_dir = install_path .. "/clawpanel/data"
 		end
@@ -326,7 +308,7 @@ function action_setup_log()
 
 	local state = "idle"
 	if running then
-		if log:match("success") or log:match("successful") or log:match("installed") or log:match("complete") then
+		if exit_code == 0 then
 			state = "success"
 		else
 			state = "running"
@@ -405,4 +387,119 @@ function action_uninstall_log()
 
 	http.prepare_content("application/json")
 	http.write_json({ log = log, completed = completed })
+end
+
+-- 列出系统外置存储挂载点（供 basic.htm 安装向导使用）
+function action_mounts()
+	local http = require "luci.http"
+	local uci = require "luci.model.uci".cursor()
+	local current_install_path = uci:get("clawpanel", "main", "install_path") or ""
+
+	-- 读取 /proc/mounts 找外置挂载点
+	local mounts = {}
+	local f = io.open("/proc/mounts", "r")
+	if f then
+		for line in f:lines() do
+			local dev, mp, fs = line:match("^([^%s]+)%s+([^%s]+)%s+([^%s]+)")
+			if mp then
+				-- 排除系统分区
+				local is_system = false
+				local system_paths = {"/", "/overlay", "/rom", "/boot", "/proc", "/sys", "/dev", "/tmp", "/var"}
+				for _, sp in ipairs(system_paths) do
+					if mp == sp or mp:find("^" .. sp .. "/") then
+						is_system = true
+						break
+					end
+				end
+				if not is_system and (fs == "ext4" or fs == "vfat" or fs == "ntfs" or fs == "exfat" or fs == "f2fs" or fs == "ubifs") then
+					-- 获取可用空间
+					local df = io.popen("df -m '" .. mp .. "' 2>/dev/null")
+					local df_out = df and df:read("*a") or ""
+					if df then df:close() end
+					local avail_mb = tonumber(df_out:match("\n(%d+)%s+%d+%s+%d+%s+%d+%s+%d%%%s+" .. mp:gsub("/", "%%%/"))) or 0
+					local total_mb = tonumber(df_out:match("(%d+)%s+%d+%s+%d+%s+%d+%s+%d%%%s+" .. mp:gsub("/", "%%%/"))) or 0
+					local size_str = ""
+					if total_mb > 1024 then
+						size_str = string.format("%.1f GB", total_mb / 1024)
+					else
+						size_str = total_mb .. " MB"
+					end
+					table.insert(mounts, {
+						mount = mp,
+						fs = fs,
+						size = size_str,
+						avail_mb = avail_mb,
+						is_current = (mp == current_install_path or current_install_path:find("^" .. mp:gsub("/", "%%%/") .. "/"))
+					})
+				end
+			end
+		end
+		f:close()
+	end
+
+	-- 按可用空间降序排列
+	table.sort(mounts, function(a, b) return a.avail_mb > b.avail_mb end)
+
+	http.prepare_content("application/json")
+	http.write_json({ mounts = mounts, current_install_path = current_install_path })
+end
+
+-- 安装前系统检查（内存、磁盘）
+function action_check_system()
+	local http = require "luci.http"
+	local install_path = http.formvalue("install_path") or ""
+
+	local memory_mb = 0
+	local f = io.open("/proc/meminfo", "r")
+	if f then
+		local content = f:read("*a") or ""
+		f:close()
+		local total = tonumber(content:match("MemTotal:%s+(%d+)")) or 0
+		memory_mb = math.floor(total / 1024)
+	end
+
+	local disk_mb = 0
+	if install_path ~= "" then
+		local df = io.popen("df -m '" .. install_path .. "' 2>/dev/null")
+		local df_out = df and df:read("*a") or ""
+		if df then df:close() end
+		disk_mb = tonumber(df_out:match("\n(%d+)%s+%d+%s+%d+%s+%d+%s+%d%%%s+" .. install_path:gsub("/", "%%%/"))) or 0
+	end
+
+	local pass = (memory_mb >= 256) and (disk_mb >= 500)
+	http.prepare_content("application/json")
+	http.write_json({
+		memory_mb = memory_mb,
+		memory_ok = (memory_mb >= 256),
+		disk_mb = disk_mb,
+		disk_ok = (disk_mb >= 500),
+		pass = pass
+	})
+end
+
+-- 检测插件更新（对比本地 VERSION 与 GitHub 最新）
+function action_check_update()
+	local http = require "luci.http"
+
+	-- 读取本地版本
+	local local_ver = "1.0.0"
+	local f = io.open("/usr/share/clawpanel/VERSION", "r")
+	if f then
+		local_ver = trim(f:read("*a") or "")
+		f:close()
+	end
+
+	-- 读取 GitHub 最新 release（插件本身是 luci-app-clawpanel，非 ClawPanel 二进制）
+	local latest_ver = local_ver
+	local tag = sh("git ls-remote --tags https://github.com/a10463981/luci-app-clawpanel 2>/dev/null | grep -v '{}' | awk -F'/' '{print $3}' | grep '^v' | sort -V | tail -1"):gsub("^v", ""):gsub("[^%d%.]", "")
+	if tag and tag ~= "" then
+		latest_ver = tag
+	end
+
+	http.prepare_content("application/json")
+	http.write_json({
+		plugin_current = local_ver,
+		plugin_latest = latest_ver,
+		plugin_has_update = (local_ver ~= latest_ver)
+	})
 end
