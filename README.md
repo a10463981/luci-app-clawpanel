@@ -6,6 +6,12 @@
 
 ---
 
+## 图片展示
+<img width="1904" height="886" alt="tupian" src="https://github.com/a10463981/luci-app-clawpanel/blob/main/tupian.png" />
+
+
+---
+
 ## 功能特性
 
 | 功能 | 说明 |
