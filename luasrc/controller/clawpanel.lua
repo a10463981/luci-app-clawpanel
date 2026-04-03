@@ -206,8 +206,8 @@ function action_service_ctl()
 	if action == "start" then
 		local install_path = uci:get("clawpanel", "main", "install_path") or ""
 		local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
-		-- 直接用nohup启动，不走init.d（init.d在SSH后台场景会被SIGHUP杀掉）
-		sh("(export HOME=/root; nohup " .. cp_bin .. " >/tmp/clawpanel.log 2>&1&)")
+		-- 直接用bash后台启动（nohup在iStoreOS上不存在）
+		sh("(export HOME=/root; /bin/bash -c '" .. cp_bin .. " >/tmp/clawpanel.log 2>&1&')")
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Starting..." })
 
@@ -220,7 +220,7 @@ function action_service_ctl()
 		local install_path = uci:get("clawpanel", "main", "install_path") or ""
 		local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
 		sh("killall -9 clawpanel 2>/dev/null; sleep 1")
-		sh("(export HOME=/root; nohup " .. cp_bin .. " >/tmp/clawpanel.log 2>&1&)")
+		sh("(export HOME=/root; /bin/bash -c '" .. cp_bin .. " >/tmp/clawpanel.log 2>&1&')")
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Restarting..." })
 

@@ -70,11 +70,10 @@ start_service() {
 
     echo "Starting ClawPanel: $CP_BIN (data=$CP_DATA, port=$port)"
 
-    # Use nohup directly (procd loses children in SSH background context)
-    # shellcheck disable=SC2163
+    # Use bash -c to background (nohup doesn't exist on iStoreOS)
     (
         export HOME="/root"
-        nohup "$CP_BIN" >> /tmp/clawpanel.log 2>&1 &
+        /bin/bash -c "$CP_BIN >> /tmp/clawpanel.log 2>&1 &"
     )
 
     # Brief wait then verify port is listening

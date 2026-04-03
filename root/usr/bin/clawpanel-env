@@ -201,9 +201,8 @@ do_setup() {
     cp_ver=$(cat "${cp_install_path}/.version" 2>/dev/null | tr -d '[:space:]' | sed 's/^pro-v//;s/^lite-v//')
     [ -z "$cp_ver" ] && cp_ver="5.3.3"
 
-    # 直接 nohup 启动，比 init.d 更可靠（init.d 在 SSH 后台场景下 procd 可能丢进程）
-    nohup "${cp_binary}" --updater-standalone "$cp_ver" "$cp_data" "$cp_port" "$openclaw_dir" \
-        > /tmp/clawpanel_startup.log 2>&1 &
+    # Use bash -c to background (nohup doesn't exist on iStoreOS)
+    /bin/bash -c "$cp_binary >> /tmp/clawpanel_startup.log 2>&1 &"
     echo "Service PID: $!"
 
     echo ""
