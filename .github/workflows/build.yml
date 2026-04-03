@@ -6,14 +6,6 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      arch:
-        description: 'Architecture (aarch64/x86_64/armv7)'
-        required: false
-        default: 'all'
-
-env:
-  SDK_VERSION: "23.05.5"
 
 jobs:
   build-aarch64:
@@ -31,31 +23,29 @@ jobs:
       - name: Download SDK
         run: |
           mkdir -p /opt/sdk
-          wget -q "https://downloads.openwrt.org/releases/${{ env.SDK_VERSION }}/targets/armvirt/64/openwrt-sdk-${{ env.SDK_VERSION }}-armvirt-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
-            -O /tmp/sdk.tar.xz 2>&1 | tail -3
-          tar xf /tmp/sdk.tar.xz -C /opt/sdk 2>&1 | tail -3
-          ls /opt/sdk/
+          wget -q "https://downloads.openwrt.org/releases/22.03.3/targets/armvirt/64/openwrt-sdk-22.03.3-armvirt-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
+            -O /tmp/sdk-aarch64.tar.xz
+          tar xf /tmp/sdk-aarch64.tar.xz -C /opt/sdk
 
       - name: Prepare
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
           cd "$SDK_DIR"
-          ./scripts/feeds update -a 2>&1 | tail -5
+          ./scripts/feeds update -a 2>&1 | tail -3
           ./scripts/feeds install -a -p luci 2>&1 | tail -5
 
       - name: Build
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cd "$SDK_DIR"
-          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -30
 
       - name: Find artifact
         id: find
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           IPK=$(find "$SDK_DIR" -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | head -1)
-          echo "ipk=$IPK"
           echo "ipk=$IPK" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
@@ -80,23 +70,23 @@ jobs:
       - name: Download SDK
         run: |
           mkdir -p /opt/sdk
-          wget -q "https://downloads.openwrt.org/releases/${{ env.SDK_VERSION }}/targets/x86/64/openwrt-sdk-${{ env.SDK_VERSION }}-x86-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
-            -O /tmp/sdk.tar.xz 2>&1 | tail -3
-          tar xf /tmp/sdk.tar.xz -C /opt/sdk 2>&1 | tail -3
+          wget -q "https://downloads.openwrt.org/releases/22.03.3/targets/x86/64/openwrt-sdk-22.03.3-x86-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
+            -O /tmp/sdk-x86_64.tar.xz
+          tar xf /tmp/sdk-x86_64.tar.xz -C /opt/sdk
 
       - name: Prepare
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
           cd "$SDK_DIR"
-          ./scripts/feeds update -a 2>&1 | tail -5
+          ./scripts/feeds update -a 2>&1 | tail -3
           ./scripts/feeds install -a -p luci 2>&1 | tail -5
 
       - name: Build
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cd "$SDK_DIR"
-          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -30
 
       - name: Find artifact
         id: find
@@ -127,23 +117,23 @@ jobs:
       - name: Download SDK
         run: |
           mkdir -p /opt/sdk
-          wget -q "https://downloads.openwrt.org/releases/${{ env.SDK_VERSION }}/targets/armvirt/32/openwrt-sdk-${{ env.SDK_VERSION }}-armvirt-32_gcc-11.2.0_musl.Linux-x86_64.tar.xz" \
-            -O /tmp/sdk.tar.xz 2>&1 | tail -3
-          tar xf /tmp/sdk.tar.xz -C /opt/sdk 2>&1 | tail -3
+          wget -q "https://downloads.openwrt.org/releases/22.03.3/targets/armvirt/32/openwrt-sdk-22.03.3-armvirt-32_gcc-11.2.0_musl_eabi.Linux-x86_64.tar.xz" \
+            -O /tmp/sdk-armv7.tar.xz
+          tar xf /tmp/sdk-armv7.tar.xz -C /opt/sdk
 
       - name: Prepare
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cp -r "${{ github.workspace }}" "$SDK_DIR/package/luci-app-clawpanel"
           cd "$SDK_DIR"
-          ./scripts/feeds update -a 2>&1 | tail -5
+          ./scripts/feeds update -a 2>&1 | tail -3
           ./scripts/feeds install -a -p luci 2>&1 | tail -5
 
       - name: Build
         run: |
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cd "$SDK_DIR"
-          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -30
 
       - name: Find artifact
         id: find
@@ -182,5 +172,5 @@ jobs:
           TAG="${{ github.event.release.tag_name }}"
           find artifacts/ -name "*.ipk" -type f | while read f; do
             echo "Uploading: $f -> $TAG"
-            gh release upload "$TAG" "$f" --clobber 2>&1
+            gh release upload "$TAG" "$f" --clobber
           done
