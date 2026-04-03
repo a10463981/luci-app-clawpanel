@@ -6,6 +6,13 @@ Install, start, stop, upgrade, and uninstall ClawPanel (OpenClaw AI assistant ma
 
 ---
 
+## img
+<img width="1904" height="886" alt="tupian" src="https://github.com/a10463981/luci-app-clawpanel/blob/main/tupian.png" />
+<img width="1904" height="886" alt="tupian" src="https://github.com/a10463981/luci-app-clawpanel/blob/main/tupian2.png" />
+
+
+---
+
 ## Features
 
 | Feature | Description |
