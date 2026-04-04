@@ -67,7 +67,9 @@ endef
 define Package/$(PKG_NAME)/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] || {
-	( . /etc/uci-defaults/99-clawpanel ) && rm -f /etc/uci-defaults/99-clawpanel
+	[ -f /etc/uci-defaults/99-clawpanel ] && {
+		( . /etc/uci-defaults/99-clawpanel ) && rm -f /etc/uci-defaults/99-clawpanel
+	}
 	rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null
 	exit 0
 }
