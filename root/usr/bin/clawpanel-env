@@ -271,6 +271,18 @@ NPMEOF
     cp_ver=$(cat "${cp_install_path}/.version" 2>/dev/null | tr -d '[:space:]' | sed 's/^pro-v//;s/^lite-v//')
     [ -z "$cp_ver" ] && cp_ver="5.3.3"
 
+    # 创建 OpenClaw wrapper（设置 NODE_ICU_DATA，解决 Unicode 正则崩溃）
+    mkdir -p /usr/local/bin
+    cat > /usr/local/bin/openclaw << 'OPENCLAWWRAP'
+#!/bin/sh
+export NODE_ICU_DATA="/opt/node22/share/icu"
+export LD_LIBRARY_PATH="/opt/node22/lib:$LD_LIBRARY_PATH"
+export PATH="/opt/node22/bin:$PATH"
+exec /opt/node22/bin/node /usr/local/lib/node_modules/openclaw/openclaw.mjs "$@"
+OPENCLAWWRAP
+    chmod +x /usr/local/bin/openclaw
+    ln -sf /usr/local/bin/openclaw /usr/bin/openclaw 2>/dev/null || true
+
     # Use bash -c to background (nohup doesn't exist on iStoreOS)
     /bin/bash -c "$cp_binary >> /tmp/clawpanel_startup.log 2>&1 &"
     echo "Service PID: $!"
