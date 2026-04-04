@@ -403,6 +403,7 @@ uci set clawpanel.main=clawpanel 2>/dev/null || uci add clawpanel main 2>/dev/nu
 uci set clawpanel.main.enabled='1'
 uci set clawpanel.main.install_path="$CP_BASE_PATH"
 uci set clawpanel.main.openclaw_dir="$OPENCLAW_DATA_DIR"
+uci set clawpanel.main.openclaw_work="$OPENCLAW_WORK_DIR"
 uci set clawpanel.main.openclaw_npm="$OPENCLAW_NPM_PATH"
 uci set clawpanel.main.node_dir="$NODE_DIR"
 uci set clawpanel.main.port='19527'

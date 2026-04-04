@@ -192,6 +192,7 @@ do_setup() {
     uci set clawpanel.main.enabled='1'
     uci set clawpanel.main.install_path="$CP_BASE_PATH"
     uci set clawpanel.main.openclaw_dir="$openclaw_dir"
+    uci set clawpanel.main.openclaw_work="$openclaw_work"
     uci set clawpanel.main.port="$cp_port"
     uci set clawpanel.main.version="$actual_ver"
     uci commit clawpanel 2>/dev/null || true
