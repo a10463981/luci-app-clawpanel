@@ -165,6 +165,25 @@ do_setup() {
     uci set clawpanel.main.version="$actual_ver"
     uci commit clawpanel 2>/dev/null || true
 
+    # 确保 node/npm 在 LuCI PATH 中可见（LuCI CGI 使用 /sbin:/usr/sbin:/bin:/usr/bin）
+    # 使用 readlink -f 解析符号链接，确保 npm wrapper 的相对路径正确
+    if [ -f /opt/node22/bin/node ]; then
+        mkdir -p /opt/node22/bin
+        # 修复 npm wrapper 的符号链接问题（ICU 路径计算依赖真实路径）
+        cat > /opt/node22/bin/npm << 'NPMEOF'
+#!/bin/sh
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+BASE="$(cd "$(dirname "$SELF")/.." && pwd)"
+export NODE_ICU_DATA="${BASE}/share/icu"
+export PATH="${BASE}/bin:${PATH}"
+exec "${BASE}/bin/node" "${BASE}/lib/node_modules/npm/bin/npm-cli.js" "$@"
+NPMEOF
+        chmod +x /opt/node22/bin/npm
+        ln -sf /opt/node22/bin/node /usr/bin/node
+        ln -sf /opt/node22/bin/npm /usr/bin/npm
+        ln -sf /opt/node22/bin/npm /usr/local/bin/npm 2>/dev/null || true
+    fi
+
     # 用 printf 写 clawpanel.json（避免 heredoc 的变量展开问题）
     printf '{\n' > "${cp_data}/clawpanel.json"
     printf '  "port": %s,\n' "$cp_port" >> "${cp_data}/clawpanel.json"
