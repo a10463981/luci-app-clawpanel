@@ -32,7 +32,6 @@ jobs:
           SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
           cp -r "${{ github.workspace }}/." "$SDK_DIR/package/luci-app-clawpanel/"
           cd "$SDK_DIR"
-          # Generate .config (silence the ncurses terminal error)
           make defconfig 2>/dev/null || true
           ./scripts/feeds update -a 2>&1 | tail -3
           ./scripts/feeds install -a -p luci 2>&1 | tail -5
@@ -156,21 +155,31 @@ jobs:
 
   release:
     needs: [build-aarch64, build-x86_64, build-armv7]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     if: github.event_name == 'release'
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: false
+          pattern: "luci-app-clawpanel-*"
+          merge-multiple: true
+
+      - name: Rename artifacts
+        run: |
+          cd artifacts
+          # Rename based on architecture
+          [ -f "luci-app-clawpanel-aarch64/luci-app-clawpanel_*.ipk" ] && mv luci-app-clawpanel-aarch64/luci-app-clawpanel_*.ipk luci-app-clawpanel_1.1.2_aarch64.ipk
+          [ -f "luci-app-clawpanel-x86_64/luci-app-clawpanel_*.ipk" ] && mv luci-app-clawpanel-x86_64/luci-app-clawpanel_*.ipk luci-app-clawpanel_1.1.2_x86_64.ipk
+          [ -f "luci-app-clawpanel-armv7/luci-app-clawpanel_*.ipk" ] && mv luci-app-clawpanel-armv7/luci-app-clawpanel_*.ipk luci-app-clawpanel_1.1.2_armv7.ipk
+          ls -la
 
       - name: Upload to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          find artifacts/ -name "*.ipk" -type f | while read f; do
-            echo "Uploading: $f -> $TAG"
-            gh release upload "$TAG" "$f" --clobber
-          done
+          cd artifacts
+          TAG="${GITHUB_REF#refs/tags/}"
+          [ -f "luci-app-clawpanel_1.1.2_aarch64.ipk" ] && gh release upload "$TAG" luci-app-clawpanel_1.1.2_aarch64.ipk --clobber
+          [ -f "luci-app-clawpanel_1.1.2_x86_64.ipk" ] && gh release upload "$TAG" luci-app-clawpanel_1.1.2_x86_64.ipk --clobber
+          [ -f "luci-app-clawpanel_1.1.2_armv7.ipk" ] && gh release upload "$TAG" luci-app-clawpanel_1.1.2_armv7.ipk --clobber
