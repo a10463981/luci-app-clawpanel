@@ -208,6 +208,32 @@ NPMWRAP
     echo "Node.js installed: $NODE_DIR/bin/node --version"
 }
 
+
+# 自动安装 OpenClaw
+install_openclaw() {
+    local NODE_DIR="${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/node"
+    local NPM_DIR="${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/openclaw-npm"
+    export PATH="${NODE_DIR}/bin:$PATH"
+    export NODE_ICU_DATA="${NODE_DIR}/share/icu"
+    mkdir -p "$NPM_DIR"
+    echo "Installing OpenClaw..."
+    npm install -g openclaw --prefix "$NPM_DIR" --registry https://registry.npmmirror.com 2>&1 | tail -3 || {
+        npm install -g openclaw --prefix "$NPM_DIR" 2>&1 | tail -3 || {
+            echo "OpenClaw npm install failed"; return 1; }
+    }
+    # 创建符号链接
+    mkdir -p /usr/local/lib/node_modules
+    local OCPATH="$NPM_DIR/lib/node_modules/openclaw"
+    if [ -d "$OCPATH" ]; then
+        rm -rf /usr/local/lib/node_modules/openclaw
+        ln -sf "$OCPATH" /usr/local/lib/node_modules/openclaw
+        echo "OpenClaw installed: $(command -v openclaw 2>/dev/null || echo $OCPATH/openclaw.mjs)"
+    else
+        echo "OpenClaw installation incomplete"
+        return 1
+    fi
+}
+
 do_setup() {
     # 检测 Node.js 目录
     local NODE_DIR
@@ -222,6 +248,17 @@ do_setup() {
     
     [ -z "$NODE_DIR" ] && { echo "Error: Node.js installation failed"; exit 1; }
     echo "Node.js detected: $NODE_DIR"
+    
+    # 检测 OpenClaw，不存在则自动安装
+    local OPENCLAW_APP
+    OPENCLAW_APP=$(detect_openclaw_app)
+    if [ -z "$OPENCLAW_APP" ] || [ ! -f "$OPENCLAW_APP/openclaw.mjs" ]; then
+        echo "OpenClaw not found, installing..."
+        install_openclaw
+        OPENCLAW_APP=$(detect_openclaw_app)
+    fi
+    [ -z "$OPENCLAW_APP" ] && { echo "Error: OpenClaw installation failed"; exit 1; }
+    echo "OpenClaw detected: $OPENCLAW_APP"
 
     local cp_install_path="${CP_BASE_PATH}/clawpanel"
     local cp_data="${cp_install_path}/data"
