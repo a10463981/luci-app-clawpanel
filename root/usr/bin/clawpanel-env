@@ -221,6 +221,17 @@ NPMEOF
         ln -sf /opt/node22/share/icu /usr/local/share/icu
     fi
 
+    # 添加 PATH 配置到 profile.d（让交互式 shell 也能访问 node/npm）
+    mkdir -p /etc/profile.d
+    cat > /etc/profile.d/node.sh << 'NODEPROFILE'
+#!/bin/sh
+export PATH="/opt/node22/bin:$PATH"
+export NODE_ICU_DATA="/opt/node22/share/icu"
+export LD_LIBRARY_PATH="/opt/node22/lib:$LD_LIBRARY_PATH"
+NODEPROFILE
+    chmod +x /etc/profile.d/node.sh
+    echo "Profile script installed: /etc/profile.d/node.sh"
+
     # 删除 iStoreOS 旧版 openclaw（路径冲突且无 node_modules，会导致 tslog 报错）
     if [ -d /usr/lib/node_modules/openclaw ] && [ ! -d /usr/lib/node_modules/openclaw/node_modules ]; then
         echo "Removing broken /usr/lib/node_modules/openclaw (old version without node_modules)..."
