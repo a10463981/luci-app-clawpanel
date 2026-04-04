@@ -215,6 +215,18 @@ NPMEOF
         ln -sf /opt/node22/bin/npm /usr/local/bin/npm 2>/dev/null || true
     fi
 
+    # 修复 Node.js ICU 数据路径：创建全局可访问的 ICU 软链接
+    if [ -d /opt/node22/share/icu ]; then
+        mkdir -p /usr/local/share
+        ln -sf /opt/node22/share/icu /usr/local/share/icu
+    fi
+
+    # 删除 iStoreOS 旧版 openclaw（路径冲突且无 node_modules，会导致 tslog 报错）
+    if [ -d /usr/lib/node_modules/openclaw ] && [ ! -d /usr/lib/node_modules/openclaw/node_modules ]; then
+        echo "Removing broken /usr/lib/node_modules/openclaw (old version without node_modules)..."
+        rm -rf /usr/lib/node_modules/openclaw
+    fi
+
     # 查找正确的 OpenClaw 安装路径（需要含 node_modules/tslog）
     local detected_app
     detected_app=$(detect_openclaw_app)
