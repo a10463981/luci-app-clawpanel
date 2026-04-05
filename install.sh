@@ -26,7 +26,7 @@ done_() { echo "${GREEN}[✓]${NC} $1"; }
 #===========================================================
 ARCH="$(uname -m)"
 case "$ARCH" in
-    aarch64|arm64) TARGET_ARCH="aarch64" ;;
+    aarch64|arm64) TARGET_ARCH="arm64"; TARGET_ARCH_NODE="arm64"; TARGET_ARCH_CP="arm64" ;;
     x86_64)        TARGET_ARCH="x64" ;;
     armv7l|armv7)  TARGET_ARCH="armv7l" ;;
     *)             err "不支持架构: $ARCH"; exit 1 ;;
@@ -118,15 +118,15 @@ elif [ -x "/usr/local/bin/node" ]; then
     log "Node.js 已安装: $(/usr/local/bin/node --version)"
 else
     pr "获取最新 LTS 版本..."
-    NODE_VER=$(curl -sL --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null \
+    NODE_VER=$(curl -sL  "https://nodejs.org/dist/index.json" 2>/dev/null \
         | grep -o '"version":"v[0-9][^"]*lts[^"]*"' \
-        | head -1 | grep -o 'v[0-9][^"]*' || echo "v22.15.1")
-    : "${NODE_VER:=v22.15.1}"
+        | head -1 | grep -o 'v[0-9][^"]*' || echo "v22.22.2")
+    : "${NODE_VER:=v22.22.2}"
     info "版本: $NODE_VER"
 
-    NODE_TGZ="/tmp/node-${TARGET_ARCH}.tar.xz"
+    NODE_TGZ="/tmp/node-${TARGET_ARCH_NODE}.tar.xz"
     pr "下载..."
-    URL="https://npmmirror.com/mirrors/node/${NODE_VER}/node-${NODE_VER}-linux-${TARGET_ARCH}.tar.xz"
+    URL="https://github.com/a10463981/node-openwrt-arm64/releases/download/v${NODE_VER#v}/node-${NODE_VER}-openwrt-arm64-fixed.tar.gz"
     curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$URL" || {
         URL="https://nodejs.org/download/release/${NODE_VER}/node-${NODE_VER}-linux-${TARGET_ARCH}.tar.xz"
         curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$URL" || { err "Node.js 下载失败"; exit 1; }
@@ -246,7 +246,7 @@ if [ -x "${CLAWPANEL_DIR}/clawpanel" ]; then
 else
     # 获取版本
     if [ "$CP_VERSION" = "latest" ] || [ -z "$CP_VERSION" ]; then
-        LATEST=$(curl -sL --max-time 10 \
+        LATEST=$(curl -sL  \
             "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" \
             | grep -o '"tag_name"[^,]*' | grep '"tag_name"' | head -1 \
             | cut -d'"' -f4 | grep '^pro-' | head -1 || echo "pro-v5.3.3")
@@ -256,10 +256,10 @@ else
     info "版本: $LATEST"
 
     FILE_VER=$(echo "$LATEST" | sed 's/^pro-v/v/;s/^lite-v/v/')
-    URL="https://github.com/zhaoxinyi02/ClawPanel/releases/download/${LATEST}/clawpanel-${FILE_VER}-linux-${TARGET_ARCH}"
+    URL="https://github.com/zhaoxinyi02/ClawPanel/releases/download/${LATEST}/clawpanel-${FILE_VER}-linux-arm64"
     pr "下载: $(basename $URL)"
     TMP="/tmp/clawpanel_bin_$$"
-    curl -fsSL --connect-timeout 30 --max-time 600 -o "$TMP" "$URL" || {
+    curl -fsSL --connect-timeout 30  -o "$TMP" "$URL" || {
         err "下载失败"; rm -f "$TMP"; exit 1; }
     mv -f "$TMP" "${CLAWPANEL_DIR}/clawpanel"
     chmod +x "${CLAWPANEL_DIR}/clawpanel"
