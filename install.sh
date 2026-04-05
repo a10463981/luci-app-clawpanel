@@ -26,7 +26,7 @@ done_() { echo "${GREEN}[✓]${NC} $1"; }
 #===========================================================
 ARCH="$(uname -m)"
 case "$ARCH" in
-    aarch64|arm64) TARGET_ARCH="arm64"; TARGET_ARCH_CP="arm64" ;;
+    aarch64|arm64) TARGET_ARCH="arm64"; TARGET_ARCH_NODE="arm64"; TARGET_ARCH_CP="arm64" ;;
     x86_64)        TARGET_ARCH="x64" ;;
     armv7l|armv7)  TARGET_ARCH="armv7l" ;;
     *)             err "不支持架构: $ARCH"; exit 1 ;;
