@@ -238,29 +238,43 @@ function action_service_ctl()
 	elseif action == "setup" then
 		sh("rm -f /tmp/clawpanel-setup.log /tmp/clawpanel-setup.pid /tmp/clawpanel-setup.exit")
 
-		local version = http.formvalue("version") or ""
-		local install_path = http.formvalue("install_path") or ""
-		install_path = install_path:gsub("[^%w%-%./]", ""):gsub("/+$", ""):gsub("%.%.", "")
+		-- disk: 存储盘挂载点（如 /mnt/sda1 或 /overlay）
+		local disk = http.formvalue("disk") or ""
+		disk = disk:gsub("[^%w%-%./]", ""):gsub("/+$", ""):gsub("%.%.", "")
 
-		-- 如果路径为空，clawpanel-env 会自动检测存储设备
-		-- 只需设置 install_path 为空字符串即可
-
-		local openclaw_dir = http.formvalue("openclaw_dir") or ""
-		openclaw_dir = openclaw_dir:gsub("[^%w%-%./]", ""):gsub("%.%.", "")
-		if openclaw_dir == "" then
-			openclaw_dir = install_path .. "/clawpanel/data"
+		if disk == "" then
+			http.prepare_content("application/json")
+			http.write_json({ status = "error", message = "disk cannot be empty" })
+			return
 		end
 
-		sh("uci set clawpanel.main.install_path='" .. install_path .. "'")
-		sh("uci set clawpanel.main.openclaw_dir='" .. openclaw_dir .. "'")
+		-- 允许 /overlay 但禁止真正的系统路径
+		local forbidden = {"/", "/rom", "/boot", "/proc", "/sys", "/dev", "/tmp", "/var", "/etc", "/root", "/usr", "/bin", "/sbin", "/lib"}
+		local is_forbidden = false
+		for _, fp in ipairs(forbidden) do
+			if disk == fp or disk:find("^" .. fp .. "/") then
+				is_forbidden = true
+				break
+			end
+		end
+		if is_forbidden then
+			http.prepare_content("application/json")
+			http.write_json({ status = "error", message = "System path forbidden: " .. disk })
+			return
+		end
+
+		-- 保存 disk 到 UCI（controller 读取此字段）
+		sh("uci set clawpanel.main.disk='" .. disk .. "'")
+		sh("uci set clawpanel.main.install_path='" .. disk .. "/Configs'")
 		sh("uci commit clawpanel 2>/dev/null")
 
+		local version = http.formvalue("version") or ""
 		local env_prefix = ""
 		if version ~= "" and version ~= "latest" then
 			env_prefix = "CP_VERSION=" .. version .. " "
 		end
 
-		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. install_path .. "' CP_OPENCLAW_DIR='" .. openclaw_dir .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
+		sh("( " .. env_prefix .. "CP_BASE_PATH='" .. disk .. "' /usr/bin/clawpanel-env setup >> /tmp/clawpanel-setup.log 2>&1; echo $? > /tmp/clawpanel-setup.exit ) & echo $! > /tmp/clawpanel-setup.pid")
 
 		http.prepare_content("application/json")
 		http.write_json({ status = "ok", message = "Installation started in background. Please wait..." })
@@ -402,14 +416,21 @@ function action_mounts()
 			if mp then
 				-- 排除系统分区
 				local is_system = false
-				local system_paths = {"/", "/overlay", "/rom", "/boot", "/proc", "/sys", "/dev", "/tmp", "/var"}
+				-- 排除根分区、boot、proc/sys/dev 等系统路径
+				-- /overlay 保留：部分设备只有内置存储（无外置 USB），overlay 分区可作为备选
+				local system_paths = {"/", "/rom", "/boot", "/proc", "/sys", "/dev", "/tmp", "/var", "/run"}
 				for _, sp in ipairs(system_paths) do
 					if mp == sp or mp:find("^" .. sp .. "/") then
 						is_system = true
 						break
 					end
 				end
-				if not is_system and (fs == "ext4" or fs == "vfat" or fs == "ntfs" or fs == "exfat" or fs == "f2fs" or fs == "ubifs") then
+				-- 排除虚拟文件系统，明确列出常用存储文件系统类型
+				if not is_system and (
+					fs == "ext4" or fs == "vfat" or fs == "ntfs" or
+					fs == "exfat" or fs == "f2fs" or fs == "ubifs" or
+					fs == "overlay" or fs == "btrfs" or fs == "xfs"
+				) then
 					-- 获取可用空间
 					local df = io.popen("df -m '" .. mp .. "' 2>/dev/null")
 					local df_out = df and df:read("*a") or ""
