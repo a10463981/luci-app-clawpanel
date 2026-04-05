@@ -209,7 +209,12 @@ function $(id){return document.getElementById(id)}
 
 function cpAjax(url, onSuccess, onError) {
   var xhr = new XMLHttpRequest();
-  xhr.open('GET', url, true);xhr.withCredentials = true;
+  xhr.open('GET', url, true);
+  // LuCI AJAX 需要带上 session cookie
+  try {
+    var match = document.cookie.match(/sysauth=([^;]+)/);
+    if (match) xhr.setRequestHeader('Cookie', 'sysauth=' + match[1]);
+  } catch(e) {}
   // Try to include existing session
   var m = document.cookie.match(/sysauth=([^;]+)/);
   if (m) xhr.setRequestHeader('X-LuCI-Auth', 'login=' + m[1]);
