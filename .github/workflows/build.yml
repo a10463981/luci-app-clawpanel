@@ -214,24 +214,44 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     steps:
-      - name: Download artifacts
+      - name: Download aarch64
         uses: actions/download-artifact@v4
         with:
+          name: luci-app-clawpanel-aarch64
           path: artifacts
-          pattern: "luci-app-clawpanel-*"
-          merge-multiple: true
 
-      - name: Rename artifacts
+      - name: Download x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: luci-app-clawpanel-x86_64
+          path: artifacts
+
+      - name: Download armv7
+        uses: actions/download-artifact@v4
+        with:
+          name: luci-app-clawpanel-armv7
+          path: artifacts
+
+      - name: Download armv6
+        uses: actions/download-artifact@v4
+        with:
+          name: luci-app-clawpanel-armv6
+          path: artifacts
+
+      - name: List artifacts
         run: |
           cd artifacts
-          VER="${{ env.IPK_VERSION }}"
-          # Remove leading 'v' if present
-          VER="${VER#v}"
-          echo "Version: $VER"
+          echo "=== All IPK files ==="
+          ls -la *.ipk 2>/dev/null || echo "No IPK files found"
+          echo ""
+          echo "=== Renaming ==="
+          TAG="${GITHUB_REF#refs/tags/}"
           for arch in aarch64 x86_64 armv7 armv6; do
-            for f in luci-app-clawpanel-${arch}/luci-app-clawpanel_*.ipk; do
-              [ -f "$f" ] && mv "$f" "luci-app-clawpanel_${VER}_${arch}.ipk" && echo "Renamed: luci-app-clawpanel_${VER}_${arch}.ipk"
-            done
+            f=$(find . -name "luci-app-clawpanel_*.ipk" | head -1)
+            if [ -n "$f" ]; then
+              echo "Found: $f -> luci-app-clawpanel_${TAG}_${arch}.ipk"
+              mv "$f" "luci-app-clawpanel_${TAG}_${arch}.ipk"
+            fi
           done
           ls -la
 
@@ -242,6 +262,6 @@ jobs:
           cd artifacts
           TAG="${GITHUB_REF#refs/tags/}"
           echo "Uploading to release: $TAG"
-          for f in luci-app-clawpanel_${IPK_VERSION}_*.ipk; do
+          for f in luci-app-clawpanel_${TAG}_*.ipk; do
             [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber && echo "Uploaded: $f"
           done
