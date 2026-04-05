@@ -125,9 +125,22 @@ if command -v node >/dev/null 2>&1; then
 elif [ -x "/usr/local/bin/node" ]; then
     log "Node.js 已安装: $(/usr/local/bin/node --version)"
 else
-    # ClawPanel 要求 Node.js v22+，强制使用 v22 LTS
-    NODE_VER="v22.22.2"
-    info "版本: $NODE_VER"
+    # ClawPanel 要求 Node.js v22+
+    if [ "$NODE_SOURCE" = "github" ]; then
+        pr "查询 GitHub 最新 v22 版本..."
+        NODE_VER=$(curl -sL --connect-timeout 10 \
+            "https://api.github.com/repos/a10463981/node-openwrt-arm64/releases" 2>/dev/null \
+            | grep -o '"tag_name": "[^"]*"' \
+            | head -20 \
+            | grep 'v22\.' \
+            | head -1 \
+            | sed 's/.*"tag_name": "//;s/".*//') || true
+        : "${NODE_VER:=v22.15.1}"
+        info "版本: $NODE_VER"
+    else
+        NODE_VER="v22.22.2"
+        info "版本: $NODE_VER (ClawPanel 最低要求 v22)"
+    fi
 
     NODE_TGZ="/tmp/node-${TARGET_ARCH_NODE}.tar.xz"
     pr "下载..."
