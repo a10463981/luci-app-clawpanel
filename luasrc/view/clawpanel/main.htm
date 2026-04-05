@@ -406,17 +406,24 @@ function cpDoUninstall(){
   var btn=$('cp-un-btn'),res=$('cp-un-res');
   btn.disabled=true;btn.textContent='卸载中...';
   res.innerHTML='<span style="font-size:12px;color:#656d76">正在清理...</span>';
-  cpAjax(BASE+'/uninstall', function(){
+  cpAjax(BASE+'/uninstall', function(d){
+    if(d.status==='error'){
+      res.innerHTML='<span style="color:#cf222e">错误: '+d.message+'</span>';
+      btn.disabled=false;btn.textContent='确定卸载';return;
+    }
     if(_upt)clearInterval(_upt);
     _upt=setInterval(function(){
       cpAjax(BASE+'/uninstall_log', function(r){
-        if(r.completed){
+        if(r && r.completed){
           clearInterval(_upt);_upt=null;
           res.innerHTML='<div style="background:#dafbe1;border:1px solid #9fdcc5;padding:10px 14px;border-radius:6px;font-size:13px">卸载完成！正在刷新...</div>';
           setTimeout(function(){location.reload()},2000);
         }
       });
     },2000);
+  }, function(err){
+    res.innerHTML='<span style="color:#cf222e">请求失败: '+err+'</span>';
+    btn.disabled=false;btn.textContent='确定卸载';
   });
 }
 

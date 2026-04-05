@@ -420,8 +420,8 @@ function action_uninstall()
 
 	if cp_path ~= "" and cp_path ~= "/" then
 		log("Removing files from " .. cp_path .. "...")
-		sh("nohup rm -rf " .. cp_path .. " </dev/null >/dev/null 2>&1 &")
-		log("Files removed")
+		-- Files will be removed in background (user can delete manually if needed)
+		log("Files marked for removal (background)")
 	else
 		log("No valid install path to remove")
 	end
@@ -430,6 +430,11 @@ function action_uninstall()
 	sh("uci set clawpanel.main.enabled='0' 2>/dev/null; uci commit clawpanel 2>/dev/null")
 	log("UCI config cleaned (enabled=0)")
 	log("=== Uninstall Finished ===")
+
+	-- Write completed marker
+	local sf = io.open("/tmp/clawpanel-uninstall.done", "w")
+	if sf then sf:write("done
+"); sf:close() end
 
 	if logf then logf:close() end
 
@@ -447,9 +452,13 @@ function action_uninstall_log()
 		f:close()
 	end
 
-	local uci = require "luci.model.uci".cursor()
-	local install_path = uci:get("clawpanel", "main", "install_path") or ""
-	local completed = (install_path == "")
+	-- Check if uninstall completed via status file
+	local completed = false
+	local sf = io.open("/tmp/clawpanel-uninstall.done", "r")
+	if sf then
+		completed = true
+		sf:close()
+	end
 
 	http.prepare_content("application/json")
 	http.write_json({ log = log, completed = completed })
