@@ -1,5 +1,11 @@
 #!/bin/sh /etc/rc.common
 # luci-app-clawpanel - init script for ClawPanel
+#
+# New directory scheme:
+#   $CP_BASE_PATH/clawpanel/     ← 程序文件
+#   $CP_BASE_PATH/configs/      ← 配置文件（clawpanel.json）
+#   $CP_BASE_PATH/openclaw/     ← OpenClaw 数据
+#   $CP_BASE_PATH/logs/         ← 日志文件
 
 USE_PROCD=0
 START=99
@@ -10,17 +16,15 @@ EXTRA_HELP="    setup            install ClawPanel\n    status_service   show se
 
 _load_uci() {
     CP_BASE_PATH="$(uci -q get clawpanel.main.install_path || echo '')"
-    if [ -z "$CP_BASE_PATH" ] || [ "${CP_BASE_PATH#/}" = "$CP_BASE_PATH" ]; then
+    if [ -z "$CP_BASE_PATH" ]; then
         echo "ClawPanel: install_path not set, run clawpanel-env setup first"
         return 1
     fi
     CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"
-    CP_DATA="${CP_INSTALL_PATH}/data"
+    CP_CONFIG_PATH="${CP_BASE_PATH}/configs"
+    CP_OPENCLAW_DIR="${CP_BASE_PATH}/openclaw"
+    CP_LOGS_PATH="${CP_BASE_PATH}/logs"
     CP_BIN="${CP_INSTALL_PATH}/clawpanel"
-    CP_OPENCLAW_DIR="$(uci -q get clawpanel.main.openclaw_dir || echo '')"
-    if [ -z "$CP_OPENCLAW_DIR" ] || [ "${CP_OPENCLAW_DIR#/}" = "$CP_OPENCLAW_DIR" ]; then
-        CP_OPENCLAW_DIR="${CP_BASE_PATH}/.openclaw"
-    fi
     return 0
 }
 
@@ -42,45 +46,44 @@ start_service() {
         return 1
     }
 
-    # Ensure directories exist
-    mkdir -p "$CP_DATA" "$CP_OPENCLAW_DIR" 2>/dev/null
-
-    # Sanitise port
     port=$(echo "$port" | tr -cd '0-9')
     [ -z "$port" ] && port=19527
 
-    # Only write clawpanel.json if it doesn't exist yet, to preserve user-modified values
-    if [ ! -f "$CP_DATA/clawpanel.json" ]; then
-        mkdir -p "$CP_DATA" 2>/dev/null
-        printf '{\n' > "$CP_DATA/clawpanel.json"
-        printf '  "port": %s,\n' "$port" >> "$CP_DATA/clawpanel.json"
-        printf '  "dataDir": "%s",\n' "$CP_DATA" >> "$CP_DATA/clawpanel.json"
-        printf '  "openClawDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "$CP_DATA/clawpanel.json"
-        printf '  "openClawApp": "%s",\n' "${CP_INSTALL_PATH}/app" >> "$CP_DATA/clawpanel.json"
-        printf '  "openClawWork": "%s",\n' "${CP_INSTALL_PATH}/work" >> "$CP_DATA/clawpanel.json"
-        printf '  "edition": "pro",\n' >> "$CP_DATA/clawpanel.json"
-        printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "$CP_DATA/clawpanel.json"
-        printf '  "adminToken": "clawpanel",\n' >> "$CP_DATA/clawpanel.json"
-        printf '  "debug": false\n' >> "$CP_DATA/clawpanel.json"
-        printf '}\n' >> "$CP_DATA/clawpanel.json"
+    # 确保目录存在
+    mkdir -p "$CP_CONFIG_PATH" "$CP_OPENCLAW_DIR" "$CP_LOGS_PATH" 2>/dev/null
+
+    # 首次安装时写入配置文件
+    if [ ! -f "$CP_CONFIG_PATH/clawpanel.json" ]; then
+        printf '{\n' > "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "port": %s,\n' "$port" >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "dataDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "openClawDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "openClawApp": "%s",\n' "/usr/local/lib/node_modules/openclaw" >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "openClawWork": "%s",\n' "$CP_OPENCLAW_DIR/work" >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "edition": "pro",\n' >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "logDir": "%s",\n' "$CP_LOGS_PATH" >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "adminToken": "clawpanel",\n' >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '  "debug": false\n' >> "$CP_CONFIG_PATH/clawpanel.json"
+        printf '}\n' >> "$CP_CONFIG_PATH/clawpanel.json"
     fi
 
-    # Stop any existing instances first
     stop_service
 
-    echo "Starting ClawPanel: $CP_BIN (data=$CP_DATA, port=$port)"
+    echo "Starting ClawPanel: $CP_BIN"
+    echo "  install_path: $CP_INSTALL_PATH"
+    echo "  config:       $CP_CONFIG_PATH/clawpanel.json"
+    echo "  openclaw_dir: $CP_OPENCLAW_DIR"
+    echo "  logs:         $CP_LOGS_PATH/"
 
-    # Use setsid to properly daemonize (nohup doesn't exist on iStoreOS)
     (
         export HOME="/root"
-        export PATH="/opt/node22/bin:$PATH"
-        # 修复 Node.js ICU 数据路径（解决 Unicode 正则表达式崩溃问题）
-        export NODE_ICU_DATA="/opt/node22/share/icu"
-        export LD_LIBRARY_PATH="/opt/node22/lib:$LD_LIBRARY_PATH"
-        setsid /bin/bash -c "$CP_BIN >> /tmp/clawpanel.log 2>&1 &"
+        export PATH="/usr/local/bin:$PATH"
+        export NODE_ICU_DATA="/usr/local/share/icu"
+        export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+        setsid /bin/bash -c "$CP_BIN >> ${CP_LOGS_PATH}/clawpanel.log 2>&1 &"
     )
 
-    # Brief wait then verify port is listening
     local i=0
     while [ $i -lt 20 ]; do
         if netstat -tulnp 2>/dev/null | grep -q ":${port} "; then
@@ -91,7 +94,7 @@ start_service() {
         i=$((i + 1))
     done
 
-    echo "ClawPanel may have started but port $port not yet visible"
+    echo "ClawPanel: may have started, port $port not yet visible"
     return 0
 }
 
@@ -103,14 +106,12 @@ stop_service() {
     port=$(echo "$port" | tr -cd '0-9')
     [ -z "$port" ] && port=19527
 
-    # Kill by process name (covers both main and updater subprocesses)
     for pid in $(pgrep -f "clawpanel" 2>/dev/null); do
         kill "$pid" 2>/dev/null
     done
 
-    # Wait for port to be released
     local i=0
-    while [ $i -lt 15 ]; do
+    while [ $i -lt 10 ]; do
         if ! netstat -tulnp 2>/dev/null | grep -q ":${port} " 2>/dev/null; then
             break
         fi
@@ -135,20 +136,22 @@ status_service() {
     enabled=$(uci -q get clawpanel.main.enabled || echo "0")
 
     echo "=== ClawPanel Status ==="
-    echo "enabled: $enabled"
+    echo "enabled:      $enabled"
     echo "install_path: $CP_BASE_PATH"
-    echo "data_dir: $CP_DATA"
+    echo "program:      $CP_INSTALL_PATH"
+    echo "configs:      $CP_CONFIG_PATH"
     echo "openclaw_dir: $CP_OPENCLAW_DIR"
-    echo "binary: $CP_BIN"
-    echo "port: $port"
+    echo "logs:         $CP_LOGS_PATH"
+    echo "binary:       $CP_BIN"
+    echo "port:         $port"
     if [ -x "$CP_BIN" ]; then
-        echo "binary_version: $("$CP_BIN" --version 2>/dev/null | head -1)"
+        echo "binary:       FOUND"
     else
-        echo "binary: not found"
+        echo "binary:       NOT FOUND"
     fi
     if netstat -tulnp 2>/dev/null | grep -q ":${port} " 2>/dev/null; then
-        echo "status: RUNNING"
+        echo "status:       RUNNING ✅"
     else
-        echo "status: NOT running"
+        echo "status:       NOT running"
     fi
 }

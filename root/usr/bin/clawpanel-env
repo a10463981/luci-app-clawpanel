@@ -1,25 +1,60 @@
 #!/bin/sh
 # clawpanel-env - auto install ClawPanel from GitHub releases
+#
+# New directory scheme:
+#   /Configs/clawpanel/         ← 主目录（可在外部存储上）
+#   /Configs/clawpanel/clawpanel/   ← 程序文件
+#   /Configs/clawpanel/configs/      ← 配置文件
+#   /Configs/clawpanel/openclaw/     ← OpenClaw 数据
+#   /Configs/clawpanel/logs/        ← 日志文件
+#
 # Env vars:
-#   CP_BASE_PATH       installation base path (required)
-#   CP_VERSION        optional fixed version like pro-v5.3.3; empty/latest = detect
-#   CP_OPENCLAW_DIR  optional OpenClaw data dir; if empty, auto-derived
-#   CP_OPENCLAW_NPM   optional OpenClaw npm dir; if empty, auto-detect
-#   CP_NODE_DIR       optional Node.js dir; if empty, auto-detect
-#   CP_STORAGE_SUBDIR optional storage subdir; default: clawpanel-storage
+#   CP_BASE_PATH   installation base (auto-detect storage if empty)
+#   CP_VERSION     fixed version like pro-v5.3.3; empty/latest = detect
+#   CP_OPENCLAW_DIR  optional OpenClaw data dir
+#   CP_NODE_DIR    optional Node.js dir
 
 set -e
 
-CP_BASE_PATH="${CP_BASE_PATH:-}"
 CP_VERSION="${CP_VERSION:-latest}"
 CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-}"
-CP_OPENCLAW_NPM="${CP_OPENCLAW_NPM:-}"
 CP_NODE_DIR="${CP_NODE_DIR:-}"
-CP_STORAGE_SUBDIR="${CP_STORAGE_SUBDIR:-clawpanel-storage}"
 
 [ "$(id -u)" = "0" ] || { echo "Error: must run as root"; exit 1; }
-[ -n "$CP_BASE_PATH" ] || { echo "Error: CP_BASE_PATH not set"; exit 1; }
 
+# ============================================================
+# 1. 自动检测存储设备，优先使用外置存储（如 /mnt/）
+# ============================================================
+detect_storage() {
+    local largest_mnt=""
+    local largest_size=0
+
+    # 扫描所有已挂载的存储设备
+    for mp in $(awk '$2 ~ /^\/mnt/ && $3 ~ /^(ext4|vfat|f2fs|ntfs|btrfs)/ {print $2}' /proc/mounts 2>/dev/null); do
+        # 检查可写且可用空间 > 500MB
+        if [ -w "$mp" ] && [ -d "$mp" ]; then
+            local avail_kb
+            avail_kb=$(df -k "$mp" 2>/dev/null | tail -1 | awk '{print $4}')
+            if [ -n "$avail_kb" ] && [ "$avail_kb" -gt 500000 ]; then
+                if [ "$avail_kb" -gt "$largest_size" ]; then
+                    largest_size=$avail_kb
+                    largest_mnt="$mp"
+                fi
+            fi
+        fi
+    done
+
+    if [ -n "$largest_mnt" ]; then
+        echo "$largest_mnt"
+    else
+        # 无外置存储或空间不足，使用内置 /Configs
+        echo "/Configs"
+    fi
+}
+
+# ============================================================
+# 2. 架构检测
+# ============================================================
 get_arch() {
     case "$(uname -m)" in
         aarch64|arm64) echo "arm64" ;;
@@ -34,18 +69,34 @@ get_arch() {
 CP_ARCH="$(get_arch)"
 [ -n "$CP_ARCH" ] || { echo "Error: unsupported arch: $(uname -m)"; exit 1; }
 
+# ============================================================
+# 3. 确定安装根路径
+# ============================================================
+if [ -z "$CP_BASE_PATH" ]; then
+    CP_BASE_PATH="$(detect_storage)/clawpanel"
+fi
+
+# 标准化路径（处理带/Configs/clawpanel 等情况）
+CP_BASE_PATH="$(echo "$CP_BASE_PATH" | sed 's/\/$//')"
+
+echo "Storage: $CP_BASE_PATH"
+
+# ============================================================
+# 4. 新目录结构
+# ============================================================
+CP_INSTALL_PATH="${CP_BASE_PATH}/clawpanel"       # 程序文件
+CP_CONFIG_PATH="${CP_BASE_PATH}/configs"           # 配置文件
+CP_OPENCLAW_DIR="${CP_OPENCLAW_DIR:-${CP_BASE_PATH}/openclaw}"  # OpenClaw 数据
+CP_LOGS_PATH="${CP_BASE_PATH}/logs"               # 日志文件
+CP_BINARY="${CP_INSTALL_PATH}/clawpanel"
+
 check_disk() {
     local path="$1"
-    local needed_mb="${2:-100}"
-    if [ -d "$path" ]; then
-        local avail_mb
-        avail_mb=$(df -m "$path" 2>/dev/null | tail -1 | awk '{print $4}')
-        if [ -n "$avail_mb" ] && [ "$avail_mb" -lt "$needed_mb" ]; then
-            echo "Error: not enough disk space. Available ${avail_mb}MB, need ${needed_mb}MB"
-            return 1
-        fi
-    else
-        echo "Error: path does not exist: $path"
+    local needed_mb="${2:-200}"
+    local avail_mb
+    avail_mb=$(df -m "$path" 2>/dev/null | tail -1 | awk '{print $4}')
+    if [ -n "$avail_mb" ] && [ "$avail_mb" -lt "$needed_mb" ]; then
+        echo "Error: not enough disk space at $path (${avail_mb}MB free, need ${needed_mb}MB)"
         return 1
     fi
 }
@@ -54,14 +105,15 @@ is_elf() {
     [ -f "$1" ] || return 1
     local first4=""
     first4=$(od -An -tx1 -N4 "$1" 2>/dev/null | tr -d ' \n\r')
-    [ -n "$first4" ] || first4=$(od -A n -t x1 -N 4 "$1" 2>/dev/null | tr -d ' \n\r')
     [ "$first4" = "7f454c46" ] && return 0
-    # Fallback: large file is likely a real binary (don't fail the script)
     local fsize
     fsize=$(wc -c < "$1" 2>/dev/null || echo 0)
     [ -n "$fsize" ] && [ "$fsize" -gt 20000000 ]
 }
 
+# ============================================================
+# 5. 获取最新版本
+# ============================================================
 get_latest_pro_version() {
     if [ -n "$CP_VERSION" ] && [ "$CP_VERSION" != "latest" ]; then
         printf '%s' "$CP_VERSION"
@@ -69,7 +121,7 @@ get_latest_pro_version() {
     fi
     local ver
     ver=$(curl -sL --max-time 10 \
-        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" \
+        "https://api.github.com/repos/zhaoxinyu02/ClawPanel/releases" \
         | grep -o '"tag_name"[^,]*' \
         | grep '"tag_name"' \
         | head -1 \
@@ -77,7 +129,7 @@ get_latest_pro_version() {
         | grep '^pro-' \
         || true)
     if [ -z "$ver" ]; then
-        echo "Error: failed to fetch latest version from GitHub API (network issue or rate limit)" >&2
+        echo "Warning: failed to fetch latest version, using pro-v5.3.3" >&2
         printf '%s' "pro-v5.3.3"
     else
         printf '%s' "$ver"
@@ -89,15 +141,15 @@ get_download_url() {
     local arch="$2"
     local file_ver
     file_ver=$(echo "$ver" | sed 's/^pro-v/v/;s/^lite-v/v/')
-    printf '%s' "https://github.com/zhaoxinyi02/ClawPanel/releases/download/${ver}/clawpanel-${file_ver}-linux-${arch}"
+    printf '%s' "https://github.com/zhaoxinyu02/ClawPanel/releases/download/${ver}/clawpanel-${file_ver}-linux-${arch}"
 }
 
 download_binary() {
     local url="$1"
     local dest="$2"
     local tmpfile="/tmp/clawpanel_download_$$"
-    echo "Downloading from: $url"
 
+    echo "Downloading: $url"
     local http_code
     http_code=$(curl -sL --fail --connect-timeout 15 --max-time 1800 \
         -o "$tmpfile" -w "%{http_code}" "$url" 2>/dev/null || true)
@@ -116,9 +168,8 @@ download_binary() {
     fi
 
     if ! is_elf "$tmpfile"; then
-        local bad_size
-        bad_size=$(wc -c < "$tmpfile" 2>/dev/null || echo 0)
-        echo "Error: downloaded file is not a valid ELF binary (size: ${bad_size} bytes)"
+        rm -f "$tmpfile"
+        echo "Error: downloaded file is not a valid ELF binary"
         return 1
     fi
 
@@ -127,129 +178,187 @@ download_binary() {
     echo "Downloaded: $(echo "$fsize" | awk '{printf "%.1f MB", $1/1024/1024}') -> $dest"
 }
 
-detect_openclaw_app() {
-    # 检测 Node.js 目录
-    local _ND; _ND=$(detect_node_dir)
-    # 优先查找已安装的 OpenClaw（含 node_modules/tslog 的才是完整的）
-    local candidate=""
-    # 查找 npm 全局安装的 openclaw
-    if [ -n "$_ND" ] && [ -x "$_ND/bin/node" ]; then
-        local npm_root; npm_root=$($_ND/bin/node $_ND/bin/npm root -g 2>/dev/null || echo "")
-        if [ -z "$npm_root" ] && [ -x "/usr/local/bin/node" ]; then
-            npm_root=$(/usr/local/bin/node /usr/local/bin/npm root -g 2>/dev/null || echo "")
-        fi
-        [ -n "$npm_root" ] && [ -d "$npm_root/openclaw" ] && candidate="$npm_root/openclaw"
-    fi
-    # 查找新版 install.sh 结构或标准路径
-    if [ -z "$candidate" ]; then
-        for dir in "${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/openclaw-npm" "/usr/local/lib/node_modules" "$_ND/lib/node_modules"; do
-            [ -d "$dir/openclaw" ] && [ -d "$dir/openclaw/node_modules" ] && { candidate="$dir/openclaw"; break; }
-        done
-    fi
-    # 返回找到的路径（含 node_modules 才有效）
-    [ -n "$candidate" ] && [ -d "$candidate/node_modules" ] && echo "$candidate" || echo ""
-}
-
-
-# 检测 Node.js 目录（支持多种安装方式）
+# ============================================================
+# 6. 检测 / 安装 Node.js（安装到 /usr/local/bin/node）
+# ============================================================
 detect_node_dir() {
     # 1. 环境变量指定
     [ -n "$CP_NODE_DIR" ] && [ -x "$CP_NODE_DIR/bin/node" ] && { echo "$CP_NODE_DIR"; return; }
-    # 2. 新版 install.sh 结构
-    [ -x "${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/node/bin/node" ] && { echo "${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/node"; return; }
-    # 3. 旧版 $NODE_DIR
-    [ -x "$NODE_DIR/bin/node" ] && { echo "$NODE_DIR"; return; }
+    # 2. 系统路径（新版安装目标）
+    [ -x "/usr/local/bin/node" ] && { echo "/usr/local"; return; }
+    # 3. 常见安装位置
+    for d in /opt/node23 /opt/node22 /opt/node /usr/local /usr; do
+        [ -x "$d/bin/node" ] && { echo "$d"; return; }
+    done
     # 4. 从 PATH 找
-    local np=$(command -v node 2>/dev/null); [ -n "$np" ] && { local nr=$(readlink -f "$np" 2>/dev/null); local nd=$(dirname "$(dirname $nr)"); [ -x "$nd/bin/node" ] && { echo "$nd"; return; }; }
-    # 5. 查找其他位置
-    for d in /usr/local /usr; do [ -x "$d/bin/node" ] && { echo "$d"; return; }; done
+    local np
+    np=$(command -v node 2>/dev/null)
+    if [ -n "$np" ]; then
+        local nr
+        nr=$(readlink -f "$np" 2>/dev/null || echo "$np")
+        local nd
+        nd=$(dirname "$(dirname "$nr")")
+        [ -x "$nd/bin/node" ] && { echo "$nd"; return; }
+    fi
     echo ""
 }
 
-
-
-# 自动安装 Node.js
 install_node() {
-    local ARCH="$(uname -m)"
+    local ARCH
+    ARCH="$(uname -m)"
     case "$ARCH" in
         aarch64|arm64) TARGET_ARCH="aarch64" ;;
         x86_64) TARGET_ARCH="x86_64" ;;
         armv7l|armv7) TARGET_ARCH="armv7" ;;
         *) echo "Unsupported arch: $ARCH"; return 1 ;;
     esac
+
     local NODE_VERSION="v22.15.1"
     local NODE_TGZ="/tmp/node-${TARGET_ARCH}.tar.xz"
-    local NODE_DIR="${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/node"
-    echo "Downloading Node.js $NODE_VERSION for $TARGET_ARCH..."
+    local NODE_DIR="/usr/local"
+
+    echo "Installing Node.js $NODE_VERSION -> /usr/local/bin/"
     mkdir -p "$NODE_DIR"
-    local URL="https://nodejs.org/download/release/${NODE_VERSION}/node-${NODE_VERSION}-linux-${TARGET_ARCH}.tar.xz"
+
+    local URL
+    URL="https://nodejs.org/download/release/${NODE_VERSION}/node-${NODE_VERSION}-linux-${TARGET_ARCH}.tar.xz"
     if ! curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$URL" 2>/dev/null; then
         URL="https://npmmirror.com/mirrors/node/${NODE_VERSION}/node-${NODE_VERSION}-linux-${TARGET_ARCH}.tar.xz"
-        curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$URL" || { echo "Failed to download Node.js"; return 1; }
+        curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$URL" || {
+            echo "Failed to download Node.js"; return 1
+        }
     fi
-    echo "Extracting Node.js..."
-    tar -xJf "$NODE_TGZ" -C "$(dirname "$NODE_DIR")" 2>/dev/null || { echo "Failed to extract"; rm -f "$NODE_TGZ"; return 1; }
+
+    tar -xJf "$NODE_TGZ" -C "$(dirname "$NODE_DIR")" 2>/dev/null || {
+        echo "Failed to extract Node.js"
+        rm -f "$NODE_TGZ"
+        return 1
+    }
+
+    # 解压后目录名如 node-v22.15.1-linux-x64，移到 /usr/local
     local EXTD=""
-    for d in "$(dirname $NODE_DIR)"/node-*; do [ -d "$d" ] && EXTD="$d" && break; done
-    [ -n "$EXTD" ] && [ "$EXTD" != "$NODE_DIR" ] && { mv "$EXTD" "$NODE_DIR" 2>/dev/null || ln -sf "$EXTD" "$NODE_DIR"; }
-    ln -sf "${NODE_DIR}/bin/node" /usr/local/bin/node
-    ln -sf "${NODE_DIR}/bin/npm" /usr/local/bin/npm
-    cat > "${NODE_DIR}/bin/npm" << 'NPMWRAP'
+    for d in "$(dirname "$NODE_DIR")"/node-*; do
+        [ -d "$d" ] && [ -x "$d/bin/node" ] && { EXTD="$d"; break; }
+    done
+
+    if [ -n "$EXTD" ] && [ "$EXTD" != "$NODE_DIR" ]; then
+        # 将内容移到 /usr/local
+        for item in "$EXTD"/*; do
+            [ -e "$NODE_DIR/$(basename "$item")" ] || mv "$item" "$NODE_DIR/"
+        done
+        rm -rf "$EXTD"
+    fi
+
+    # npm wrapper（解决 ICU 路径问题）
+    mkdir -p "$NODE_DIR/bin"
+    cat > "$NODE_DIR/bin/npm" << 'NPMWRAP'
 #!/bin/sh
 SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 BASE="$(cd "$(dirname "$SELF")/.." && pwd)"
 export NODE_ICU_DATA="${BASE}/share/icu"
+export LD_LIBRARY_PATH="${BASE}/lib:$LD_LIBRARY_PATH"
 export PATH="${BASE}/bin:${PATH}"
 exec "${BASE}/bin/node" "${BASE}/lib/node_modules/npm/bin/npm-cli.js" "$@"
 NPMWRAP
-    chmod +x "${NODE_DIR}/bin/npm" && ln -sf "${NODE_DIR}/bin/npm" /usr/local/bin/npm
-    [ -d "${NODE_DIR}/share/icu" ] && mkdir -p /usr/local/share && ln -sf "${NODE_DIR}/share/icu" /usr/local/share/icu 2>/dev/null || true
+    chmod +x "$NODE_DIR/bin/npm"
+
+    # 软链接到 /usr/local/bin（新版方案：OpenClaw 直接调用）
+    ln -sf "$NODE_DIR/bin/node" /usr/local/bin/node
+    ln -sf "$NODE_DIR/bin/npm"  /usr/local/bin/npm
+    ln -sf "$NODE_DIR/bin/node" /usr/bin/node
+    ln -sf "$NODE_DIR/bin/npm"  /usr/bin/npm
+
+    # ICU 软链接
+    if [ -d "$NODE_DIR/share/icu" ]; then
+        mkdir -p /usr/local/share
+        ln -sf "$NODE_DIR/share/icu" /usr/local/share/icu
+    fi
+
     rm -f "$NODE_TGZ"
-    echo "Node.js installed: $NODE_DIR/bin/node --version"
+    echo "Node.js installed: $(/usr/local/bin/node --version)"
 }
 
+# ============================================================
+# 7. 检测 / 安装 OpenClaw
+# ============================================================
+detect_openclaw_app() {
+    local _ND
+    _ND=$(detect_node_dir)
+    local candidate=""
 
-# 自动安装 OpenClaw
+    if [ -n "$_ND" ] && [ -x "$_ND/bin/node" ]; then
+        local npm_root
+        npm_root=$($_ND/bin/node $_ND/bin/npm root -g 2>/dev/null || echo "")
+        [ -n "$npm_root" ] && [ -d "$npm_root/openclaw" ] && candidate="$npm_root/openclaw"
+    fi
+
+    if [ -z "$candidate" ]; then
+        for dir in "/usr/local/lib/node_modules" "$_ND/lib/node_modules"; do
+            [ -d "$dir/openclaw" ] && [ -d "$dir/openclaw/node_modules" ] && { candidate="$dir/openclaw"; break; }
+        done
+    fi
+
+    [ -n "$candidate" ] && [ -d "$candidate/node_modules" ] && echo "$candidate" || echo ""
+}
+
 install_openclaw() {
-    local NODE_DIR="${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/node"
-    local NPM_DIR="${CP_BASE_PATH}/${CP_STORAGE_SUBDIR}/openclaw-npm"
+    local NODE_DIR
+    NODE_DIR=$(detect_node_dir)
+    [ -z "$NODE_DIR" ] && { echo "Error: Node.js not found"; return 1; }
+
     export PATH="${NODE_DIR}/bin:$PATH"
+    export LD_LIBRARY_PATH="${NODE_DIR}/lib:$LD_LIBRARY_PATH"
     export NODE_ICU_DATA="${NODE_DIR}/share/icu"
-    mkdir -p "$NPM_DIR"
-    echo "Installing OpenClaw..."
-    npm install -g openclaw --prefix "$NPM_DIR" --registry https://registry.npmmirror.com 2>&1 | tail -3 || {
-        npm install -g openclaw --prefix "$NPM_DIR" 2>&1 | tail -3 || {
-            echo "OpenClaw npm install failed"; return 1; }
-    }
-    # 创建符号链接
+
+    echo "Installing OpenClaw via npm..."
     mkdir -p /usr/local/lib/node_modules
-    local OCPATH="$NPM_DIR/lib/node_modules/openclaw"
+
+    "${NODE_DIR}/bin/npm" install -g openclaw \
+        --registry https://registry.npmmirror.com \
+        2>&1 | tail -5 || \
+    "${NODE_DIR}/bin/npm" install -g openclaw \
+        2>&1 | tail -5 || {
+        echo "OpenClaw npm install failed"; return 1;
+    }
+
+    local OCPATH="/usr/local/lib/node_modules/openclaw"
     if [ -d "$OCPATH" ]; then
-        rm -rf /usr/local/lib/node_modules/openclaw
-        ln -sf "$OCPATH" /usr/local/lib/node_modules/openclaw
-        echo "OpenClaw installed: $(command -v openclaw 2>/dev/null || echo $OCPATH/openclaw.mjs)"
+        echo "OpenClaw installed: $OCPATH"
     else
         echo "OpenClaw installation incomplete"
         return 1
     fi
 }
 
+# ============================================================
+# 8. 主安装流程
+# ============================================================
 do_setup() {
-    # 检测 Node.js 目录
+    echo "=== ClawPanel Setup ==="
+    echo "Storage root: $CP_BASE_PATH"
+    echo "Program:     $CP_INSTALL_PATH"
+    echo "Configs:     $CP_CONFIG_PATH"
+    echo "OpenClaw:    $CP_OPENCLAW_DIR"
+    echo "Logs:        $CP_LOGS_PATH"
+    echo "Arch:        $CP_ARCH"
+
+    check_disk "$CP_BASE_PATH" 200 || exit 1
+
+    # 创建目录结构
+    mkdir -p "$CP_INSTALL_PATH" "$CP_CONFIG_PATH" "$CP_OPENCLAW_DIR" "$CP_LOGS_PATH"
+
+    # ---- Node.js ----
     local NODE_DIR
     NODE_DIR=$(detect_node_dir)
-    
-    # 如果找不到 Node.js，自动安装
     if [ -z "$NODE_DIR" ] || [ ! -x "$NODE_DIR/bin/node" ]; then
-        echo "Node.js not found, installing..."
+        echo "Node.js not found, installing to /usr/local/bin/..."
         install_node
-        NODE_DIR=$(detect_node_dir)
+        NODE_DIR=$(detect_node_DIR)
     fi
-    
     [ -z "$NODE_DIR" ] && { echo "Error: Node.js installation failed"; exit 1; }
-    echo "Node.js detected: $NODE_DIR"
-    
-    # 检测 OpenClaw，不存在则自动安装
+    echo "Node.js: $NODE_DIR/bin/node"
+
+    # ---- OpenClaw ----
     local OPENCLAW_APP
     OPENCLAW_APP=$(detect_openclaw_app)
     if [ -z "$OPENCLAW_APP" ] || [ ! -f "$OPENCLAW_APP/openclaw.mjs" ]; then
@@ -258,163 +367,97 @@ do_setup() {
         OPENCLAW_APP=$(detect_openclaw_app)
     fi
     [ -z "$OPENCLAW_APP" ] && { echo "Error: OpenClaw installation failed"; exit 1; }
-    echo "OpenClaw detected: $OPENCLAW_APP"
+    echo "OpenClaw: $OPENCLAW_APP"
 
-    local cp_install_path="${CP_BASE_PATH}/clawpanel"
-    local cp_data="${cp_install_path}/data"
-    local cp_binary="${cp_install_path}/clawpanel"
-    # OpenClaw 目录：优先使用环境变量指定值，否则默认放在安装路径下
-    local openclaw_dir="${CP_OPENCLAW_DIR:-${CP_BASE_PATH}/.openclaw}"
-    local openclaw_app="${cp_install_path}/app"
-    local openclaw_work="${cp_install_path}/work"
-    local cp_port="19527"
-
-    echo "=== ClawPanel Setup ==="
-    echo "Install path: $cp_install_path"
-    echo "Data path: $cp_data"
-    echo "OpenClaw dir: $openclaw_dir"
-    echo "App dir: $openclaw_app"
-    echo "Work dir: $openclaw_work"
-    echo "Port: $cp_port"
-    echo "Architecture: $CP_ARCH"
-
-    check_disk "$CP_BASE_PATH" 100 || exit 1
-    mkdir -p "$CP_BASE_PATH" "$cp_install_path" "$cp_data" "$openclaw_dir" "$openclaw_app" "$openclaw_work"
-
-    echo "Detecting latest pro version..."
+    # ---- ClawPanel 二进制 ----
+    echo "Detecting latest version..."
     local version
     version=$(get_latest_pro_version)
-    echo "Using version: $version"
+    echo "Version: $version"
 
     local url
     url=$(get_download_url "$version" "$CP_ARCH")
-    download_binary "$url" "$cp_binary" || exit 1
+    download_binary "$url" "$CP_BINARY" || exit 1
 
-    # 直接使用 GitHub API 版本号，不用 binary --version（后者会联网检测更新，可能卡住）
-    local actual_ver="$version"
-    echo "$actual_ver" > "${cp_install_path}/.version"
-    echo "Version: $actual_ver"
+    # 保存版本
+    echo "$version" > "${CP_INSTALL_PATH}/.version"
 
-    # 保存到 UCI（供 init.d 后续启动使用）
+    # ---- profile.d node.sh ----
+    mkdir -p /etc/profile.d
+    cat > /etc/profile.d/node.sh << 'NODEPROF'
+#!/bin/sh
+export PATH="/usr/local/bin:$PATH"
+export NODE_ICU_DATA="/usr/local/share/icu"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+NODEPROF
+    chmod +x /etc/profile.d/node.sh
+
+    # ---- openclaw wrapper（设置 ICU 路径后调用 OpenClaw）----
+    mkdir -p /usr/local/bin
+    cat > /usr/local/bin/openclaw << 'OPENCLAWWRAP'
+#!/bin/sh
+export NODE_ICU_DATA="/usr/local/share/icu"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+export PATH="/usr/local/bin:$PATH"
+exec /usr/local/bin/node /usr/local/lib/node_modules/openclaw/openclaw.mjs "$@"
+OPENCLAWWRAP
+    chmod +x /usr/local/bin/openclaw
+    ln -sf /usr/local/bin/openclaw /usr/bin/openclaw 2>/dev/null || true
+
+    # ---- UCI 配置 ----
     uci set clawpanel.main.enabled='1'
     uci set clawpanel.main.install_path="$CP_BASE_PATH"
-    uci set clawpanel.main.openclaw_dir="$openclaw_dir"
-    uci set clawpanel.main.openclaw_work="$openclaw_work"
-    uci set clawpanel.main.port="$cp_port"
-    uci set clawpanel.main.version="$actual_ver"
+    uci set clawpanel.main.openclaw_dir="$CP_OPENCLAW_DIR"
+    uci set clawpanel.main.port='19527'
+    uci set clawpanel.main.version="$version"
     uci commit clawpanel 2>/dev/null || true
 
-    # 确保 node/npm 在 LuCI PATH 中可见（LuCI CGI 使用 /sbin:/usr/sbin:/bin:/usr/bin）
-    # 使用 readlink -f 解析符号链接，确保 npm wrapper 的相对路径正确
-    if [ -f $NODE_DIR/bin/node ]; then
-        mkdir -p $NODE_DIR/bin
-        # 修复 npm wrapper 的符号链接问题（ICU 路径计算依赖真实路径）
-        cat > $NODE_DIR/bin/npm << 'NPMEOF'
-#!/bin/sh
-SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-BASE="$(cd "$(dirname "$SELF")/.." && pwd)"
-export NODE_ICU_DATA="${BASE}/share/icu"
-export PATH="${BASE}/bin:${PATH}"
-exec "${BASE}/bin/node" "${BASE}/lib/node_modules/npm/bin/npm-cli.js" "$@"
-NPMEOF
-        chmod +x $NODE_DIR/bin/npm
-        ln -sf $NODE_DIR/bin/node /usr/bin/node
-        ln -sf $NODE_DIR/bin/npm /usr/bin/npm
-        ln -sf $NODE_DIR/bin/npm /usr/local/bin/npm 2>/dev/null || true
-    fi
+    # ---- clawpanel.json（写入 configs/ 而非 data/，符合新目录结构）----
+    local cp_port=19527
+    printf '{\n' > "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "port": %s,\n' "$cp_port" >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "dataDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "openClawDir": "%s",\n' "$CP_OPENCLAW_DIR" >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "openClawApp": "%s",\n' "$OPENCLAW_APP" >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "openClawWork": "%s",\n' "$CP_OPENCLAW_DIR/work" >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "edition": "pro",\n' >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "logDir": "%s",\n' "$CP_LOGS_PATH" >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "adminToken": "clawpanel",\n' >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '  "debug": false\n' >> "${CP_CONFIG_PATH}/clawpanel.json"
+    printf '}\n' >> "${CP_CONFIG_PATH}/clawpanel.json"
+    echo "Config: ${CP_CONFIG_PATH}/clawpanel.json"
 
-    # 修复 Node.js ICU 数据路径：创建全局可访问的 ICU 软链接
-    if [ -d $NODE_DIR/share/icu ]; then
-        mkdir -p /usr/local/share
-        ln -sf $NODE_DIR/share/icu /usr/local/share/icu
-    fi
-
-    # 添加 PATH 配置到 profile.d（让交互式 shell 也能访问 node/npm）
-    mkdir -p /etc/profile.d
-    cat > /etc/profile.d/node.sh << 'NODEPROFILE'
-#!/bin/sh
-export PATH="$NODE_DIR/bin:$PATH"
-export NODE_ICU_DATA="$NODE_DIR/share/icu"
-export LD_LIBRARY_PATH="$NODE_DIR/lib:$LD_LIBRARY_PATH"
-NODEPROFILE
-    chmod +x /etc/profile.d/node.sh
-    echo "Profile script installed: /etc/profile.d/node.sh"
-
-    # 删除 iStoreOS 旧版 openclaw（路径冲突且无 node_modules，会导致 tslog 报错）
-    if [ -d /usr/lib/node_modules/openclaw ] && [ ! -d /usr/lib/node_modules/openclaw/node_modules ]; then
-        echo "Removing broken /usr/lib/node_modules/openclaw (old version without node_modules)..."
-        rm -rf /usr/lib/node_modules/openclaw
-    fi
-
-    # 查找正确的 OpenClaw 安装路径（需要含 node_modules/tslog）
-    local detected_app
-    detected_app=$(detect_openclaw_app)
-    if [ -z "$detected_app" ]; then
-        detected_app="${cp_install_path}/app"
-    fi
-    echo "OpenClaw app: $detected_app"
-
-    # 用 printf 写 clawpanel.json（避免 heredoc 的变量展开问题）
-    printf '{\n' > "${cp_data}/clawpanel.json"
-    printf '  "port": %s,\n' "$cp_port" >> "${cp_data}/clawpanel.json"
-    printf '  "dataDir": "%s",\n' "$cp_data" >> "${cp_data}/clawpanel.json"
-    printf '  "openClawDir": "%s",\n' "$openclaw_dir" >> "${cp_data}/clawpanel.json"
-    printf '  "openClawApp": "%s",\n' "$detected_app" >> "${cp_data}/clawpanel.json"
-    printf '  "openClawWork": "%s",\n' "$openclaw_work" >> "${cp_data}/clawpanel.json"
-    printf '  "edition": "pro",\n' >> "${cp_data}/clawpanel.json"
-    printf '  "jwtSecret": "clawpanel-secret-change-me",\n' >> "${cp_data}/clawpanel.json"
-    printf '  "adminToken": "clawpanel",\n' >> "${cp_data}/clawpanel.json"
-    printf '  "debug": false\n' >> "${cp_data}/clawpanel.json"
-    printf '}\n' >> "${cp_data}/clawpanel.json"
-    echo "Config written: ${cp_data}/clawpanel.json"
-
-    # 启动 ClawPanel（init 脚本会在启动前再次写入正确的 clawpanel.json）
-    echo "Starting ClawPanel..."
+    # ---- 启动服务 ----
     /etc/init.d/clawpanel enable 2>/dev/null || true
-
-    # 先停掉旧进程
     killall -9 clawpanel 2>/dev/null || true
 
-    # 等待端口释放
     local i=0
-    while [ $i -lt 15 ]; do
-        if ! netstat -tulnp 2>/dev/null | grep -q ":${cp_port} " ; then
+    while [ $i -lt 10 ]; do
+        if ! netstat -tulnp 2>/dev/null | grep -q ":${cp_port} "; then
             break
         fi
         sleep 1
         i=$((i + 1))
     done
 
-    # 读取版本号（去掉 pro- 前缀，因为 clawpanel --updater-standalone 不识别）
-    local cp_ver
-    cp_ver=$(cat "${cp_install_path}/.version" 2>/dev/null | tr -d '[:space:]' | sed 's/^pro-v//;s/^lite-v//')
-    [ -z "$cp_ver" ] && cp_ver="5.3.3"
-
-    # 创建 OpenClaw wrapper（设置 NODE_ICU_DATA，解决 Unicode 正则崩溃）
-    mkdir -p /usr/local/bin
-    cat > /usr/local/bin/openclaw << 'OPENCLAWWRAP'
-#!/bin/sh
-export NODE_ICU_DATA="$NODE_DIR/share/icu"
-export LD_LIBRARY_PATH="$NODE_DIR/lib:$LD_LIBRARY_PATH"
-export PATH="$NODE_DIR/bin:$PATH"
-exec $NODE_DIR/bin/node /usr/local/lib/node_modules/openclaw/openclaw.mjs "$@"
-OPENCLAWWRAP
-    chmod +x /usr/local/bin/openclaw
-    ln -sf /usr/local/bin/openclaw /usr/bin/openclaw 2>/dev/null || true
-
-    # Use bash -c to background (nohup doesn't exist on iStoreOS)
-    /bin/bash -c "$cp_binary >> /tmp/clawpanel_startup.log 2>&1 &"
-    echo "Service PID: $!"
+    (
+        export HOME="/root"
+        export PATH="/usr/local/bin:$PATH"
+        export NODE_ICU_DATA="/usr/local/share/icu"
+        export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+        setsid /bin/bash -c "$CP_BINARY >> ${CP_LOGS_PATH}/clawpanel.log 2>&1 &"
+    )
 
     echo ""
     echo "=== Installation Complete ==="
-    echo "Binary: $cp_binary"
-    echo "Config: ${cp_data}/clawpanel.json"
-    echo "OpenClaw dir: $openclaw_dir"
-    echo "Service start command issued, use /wait_running to verify"
+    echo "Binary:     $CP_BINARY"
+    echo "Config:     ${CP_CONFIG_PATH}/clawpanel.json"
+    echo "OpenClaw:   $OPENCLAW_APP"
+    echo "Logs:       ${CP_LOGS_PATH}/"
     echo ""
-    echo "Hint: if service is not running yet, wait 10s then run:"
-    echo "  /etc/init.d/clawpanel status"
+    echo "Node.js installed to /usr/local/bin/node (managed by OpenClaw)"
+    echo "Wait 10s then check: /etc/init.d/clawpanel status"
 }
 
 case "${1:-setup}" in

@@ -150,16 +150,16 @@ else
     tar -xJf "$NODE_TGZ" -C /opt/ 2>/dev/null || { err "解压失败"; exit 1; }
     
     # 重命名为 node22
-    rm -rf /opt/node22
-    mv /opt/node-${NODE_VERSION}-linux-${TARGET_ARCH} /opt/node22
+    mkdir -p /usr/local
+    mv /opt/node-${NODE_VERSION}-linux-${TARGET_ARCH} /usr/local
     
     # 创建符号链接
-    ln -sf /opt/node22/bin/node /usr/local/bin/node
-    ln -sf /opt/node22/bin/npm /usr/local/bin/npm
-    ln -sf /opt/node22/bin/npx /usr/local/bin/npx 2>/dev/null || true
+    ln -sf /usr/local/bin/node /usr/local/bin/node
+    ln -sf /usr/local/bin/npm /usr/local/bin/npm
+    ln -sf /usr/local/bin/npx /usr/local/bin/npx 2>/dev/null || true
     
     # npm wrapper（修复 ICU 路径）
-    cat > /opt/node22/bin/npm << 'NPMEOF'
+    cat > /usr/local/bin/npm << 'NPMEOF'
 #!/bin/sh
 SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 BASE="$(cd "$(dirname "$SELF")/.." && pwd)"
@@ -167,16 +167,16 @@ export NODE_ICU_DATA="${BASE}/share/icu"
 export PATH="${BASE}/bin:${PATH}"
 exec "${BASE}/bin/node" "${BASE}/lib/node_modules/npm/bin/npm-cli.js" "$@"
 NPMEOF
-    chmod +x /opt/node22/bin/npm
+    chmod +x /usr/local/bin/npm
     
-    NODE_PATH="/opt/node22/bin/node"
-    NPM_PATH="/opt/node22/bin/npm"
+    NODE_PATH="/usr/local/bin/node"
+    NPM_PATH="/usr/local/bin/npm"
     
     rm -f "$NODE_TGZ"
     log "Node.js 安装完成: $(node --version)"
 fi
 
-NODE_ICU="/opt/node22/share/icu"
+NODE_ICU="/usr/local/share/icu"
 if [ -d "$NODE_ICU" ]; then
     mkdir -p /usr/local/share
     ln -sf "$NODE_ICU" /usr/local/share/icu 2>/dev/null || true
@@ -239,9 +239,9 @@ mkdir -p /usr/local/bin
 cat > /usr/local/bin/openclaw << OCEOF
 #!/bin/sh
 export NODE_ICU_DATA="${NODE_ICU}"
-export LD_LIBRARY_PATH="/opt/node22/lib:\$LD_LIBRARY_PATH"
-export PATH="/opt/node22/bin:\$PATH"
-exec /opt/node22/bin/node /usr/local/lib/node_modules/openclaw/openclaw.mjs "\$@"
+export LD_LIBRARY_PATH="/usr/local/lib:\$LD_LIBRARY_PATH"
+export PATH="/usr/local/bin:\$PATH"
+exec /usr/local/bin/node /usr/local/lib/node_modules/openclaw/openclaw.mjs "\$@"
 OCEOF
 chmod +x /usr/local/bin/openclaw
 ln -sf /usr/local/bin/openclaw /usr/bin/openclaw 2>/dev/null || true
@@ -291,9 +291,9 @@ step "配置环境变量..."
 mkdir -p /etc/profile.d
 cat > /etc/profile.d/node.sh << PEOF
 #!/bin/sh
-export PATH="/opt/node22/bin:\$PATH"
-export NODE_ICU_DATA="/opt/node22/share/icu"
-export LD_LIBRARY_PATH="/opt/node22/lib:\$LD_LIBRARY_PATH"
+export PATH="/usr/local/bin:\$PATH"
+export NODE_ICU_DATA="/usr/local/share/icu"
+export LD_LIBRARY_PATH="/usr/local/lib:\$LD_LIBRARY_PATH"
 PEOF
 chmod +x /etc/profile.d/node.sh
 log "已安装: /etc/profile.d/node.sh"
@@ -361,9 +361,9 @@ start_service() {
 
     (
         export HOME="/root"
-        export PATH="/opt/node22/bin:\$PATH"
-        export NODE_ICU_DATA="/opt/node22/share/icu"
-        export LD_LIBRARY_PATH="/opt/node22/lib:\$LD_LIBRARY_PATH"
+        export PATH="/usr/local/bin:\$PATH"
+        export NODE_ICU_DATA="/usr/local/share/icu"
+        export LD_LIBRARY_PATH="/usr/local/lib:\$LD_LIBRARY_PATH"
         export CP_BASE_PATH="\${CP_BASE_PATH}"
         export CP_OPENCLAW_DIR="\${CP_OPENCLAW_DIR}"
         setsid /bin/bash -c "\$CP_BIN >> /tmp/clawpanel.log 2>&1 &"
@@ -430,7 +430,7 @@ echo "📦 数据位置（外部存储，永久保存）:"
 echo "   ClawPanel: $CP_INSTALL_PATH"
 echo "   OpenClaw数据: $CP_OPENCLAW_DIR"
 echo "   OpenClaw包: $OPENCLAW_SOURCE"
-echo "   Node.js: /opt/node22"
+echo "   Node.js: /usr/local"
 echo ""
 echo "🔧 系统路径（可能重装后丢失）:"
 echo "   /usr/local/bin/openclaw → $OPENCLAW_SOURCE/openclaw.mjs"

@@ -123,18 +123,18 @@ log "可用空间: $(df -h "$CP_BASE_PATH" | tail -1 | awk '{print $4}')"
 info "设置目录结构..."
 
 # 子目录（使用相对路径，避免硬编码）
-STORAGE_SUBDIR="clawpanel-storage"  # 所有数据放这个子目录
+STORAGE_SUBDIR="clawpanel"  # 所有数据放这个子目录
 INSTALL_ROOT="${CP_BASE_PATH}/${STORAGE_SUBDIR}"
 
-NODE_DIR="${INSTALL_ROOT}/node"
-OPENCLAW_NPM_DIR="${INSTALL_ROOT}/openclaw-npm"
-OPENCLAW_DATA_DIR="${INSTALL_ROOT}/.openclaw"
-OPENCLAW_WORK_DIR="${INSTALL_ROOT}/.openclaw-work"
+NODE_DIR="/usr/local"
+OPENCLAW_NPM_DIR="${CP_BASE_PATH}/openclaw/npm"
+OPENCLAW_DATA_DIR="${CP_BASE_PATH}/openclaw"
+OPENCLAW_WORK_DIR="${CP_BASE_PATH}/openclaw/work"
 CLAWPANEL_DIR="${INSTALL_ROOT}/clawpanel"
 CLAWPANEL_DATA="${CLAWPANEL_DIR}/data"
 
 # npm 全局安装路径
-NPM_PREFIX="${INSTALL_ROOT}/npm-global"
+NPM_PREFIX="${CP_BASE_PATH}/openclaw/npm"
 
 log "安装根目录: $INSTALL_ROOT"
 log "Node.js: $NODE_DIR"
@@ -461,7 +461,7 @@ STOP=10
 # 加载配置
 _load() {
     CP_BASE_PATH="\$(uci -q get clawpanel.main.install_path)"
-    STORAGE_SUBDIR="clawpanel-storage"
+    STORAGE_SUBDIR="clawpanel"
     NODE_DIR="\${CP_BASE_PATH}/\${STORAGE_SUBDIR}/node"
     OPENCLAW_DATA_DIR="\${CP_BASE_PATH}/\${STORAGE_SUBDIR}/.openclaw"
     OPENCLAW_WORK_DIR="\${CP_BASE_PATH}/\${STORAGE_SUBDIR}/.openclaw-work"
