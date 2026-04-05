@@ -14,7 +14,7 @@ PKG_LICENSE:=CC-BY-NC-SA-4.0
 
 LUCI_TITLE:=ClawPanel AI 管理面板 LuCI 插件
 LUCI_DEPENDS:=+luci-compat +luci-base +curl +openssl-util +tar +libstdcpp6
-LUCI_PKGARCH:=all
+LUCI_PKGARCH:=$(PKG_ARCH)
 
 # 优先使用 luci.mk (feeds 模式), 不可用时回退 package.mk
 ifeq ($(wildcard $(TOPDIR)/feeds/luci/luci.mk),)

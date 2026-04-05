@@ -238,22 +238,25 @@ jobs:
           name: luci-app-clawpanel-armv6
           path: artifacts
 
-      - name: List artifacts
+      - name: List and rename artifacts
         run: |
           cd artifacts
-          echo "=== All IPK files ==="
-          ls -la *.ipk 2>/dev/null || echo "No IPK files found"
-          echo ""
-          echo "=== Renaming ==="
-          TAG="${GITHUB_REF#refs/tags/}"
-          for arch in aarch64 x86_64 armv7 armv6; do
-            f=$(find . -name "luci-app-clawpanel_*.ipk" | head -1)
-            if [ -n "$f" ]; then
-              echo "Found: $f -> luci-app-clawpanel_${TAG}_${arch}.ipk"
-              mv "$f" "luci-app-clawpanel_${TAG}_${arch}.ipk"
-            fi
+          echo "=== Available IPK files ==="
+          find . -name "*.ipk" -type f | while read f; do
+            echo "Found: $f ($(du -h "$f" | cut -f1))"
           done
-          ls -la
+          TAG="${GITHUB_REF#refs/tags/}"
+          # Find the actual IPK (may be named anything by the build)
+          IPK=$(find . -name "luci-app-clawpanel_*.ipk" -type f | head -1)
+          if [ -n "$IPK" ]; then
+            SIZE=$(du -h "$IPK" | cut -f1)
+            # Rename to standard form: name_VERSION_ARCH.ipk
+            mv "$IPK" "luci-app-clawpanel_${TAG}_all.ipk"
+            echo "Renamed: luci-app-clawpanel_${TAG}_all.ipk ($SIZE)"
+          fi
+          echo ""
+          echo "=== Final files ==="
+          ls -la *.ipk 2>/dev/null
 
       - name: Upload to Release
         env:
@@ -262,6 +265,15 @@ jobs:
           cd artifacts
           TAG="${GITHUB_REF#refs/tags/}"
           echo "Uploading to release: $TAG"
+          # Upload all IPK files found
           for f in luci-app-clawpanel_${TAG}_*.ipk; do
+            if [ -f "$f" ]; then
+              gh release upload "$TAG" "$f" --clobber && echo "Uploaded: $f"
+            fi
+          done
+          # Also upload any remaining IPK files
+          for f in *.ipk; do
             [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber && echo "Uploaded: $f"
           done
+          echo "Done. Verifying release assets:"
+          gh release view "$TAG" --json=assets --jq '.assets[].name'
