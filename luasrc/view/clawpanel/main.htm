@@ -276,7 +276,7 @@ function cpLoadNode(){
 
 function cpSvc(a){
   // DEBUG: Check if function is called
-  alert('cpSvc called with: ' + a + '\nURL: ' + BASE+'/service_ctl?action='+a);
+  
   var t={start:'启动',restart:'重启',stop:'停止',enable:'启用',disable:'禁用'};
   var url = BASE+'/service_ctl?action='+a;
   cpShowRes('inf',(t[a]||a)+'请求已发送...');
@@ -286,7 +286,7 @@ function cpSvc(a){
     setTimeout(function(){cpLoadStatus();cpCloseRes()},2000);
   }, function(err){ cpCloseRes(); alert('操作失败: '+err); console.error('Service action error:', err); });
 }
-function cpOpenPanel(){window.open('http://'+_lan+':'+_port,'_blank')}
+function cpOpenPanel(){var u='http://'+(_lan||'192.168.1.1')+':'+(_port||'19527');window.open(u,'_blank');console.log('Opening:',u)}
 
 function cpShowRes(tp,msg){
   var el=$('cp-res');el.className='cp-res show '+tp;el.textContent=msg
