@@ -160,28 +160,24 @@ cmd_setup() {
     step "第三步: 安装 Node.js（系统级）"
     #===========================================================
     local existing_node
-    # npm wrapper: 优先使用 /opt/node23/bin/npm（已存在且正常）
-    if [ -x "/opt/node23/bin/npm" ]; then
-        mkdir -p /usr/local/bin
-        ln -sf /opt/node23/bin/node /usr/local/bin/node 2>/dev/null || true
-        ln -sf /opt/node23/bin/npm /usr/local/bin/npm 2>/dev/null || true
-        ln -sf /opt/node23/bin/npx /usr/local/bin/npx 2>/dev/null || true
-        mkdir -p /usr/local/lib /usr/local/share
-        cp -a /opt/node23/lib/* /usr/local/lib/ 2>/dev/null || true
-        [ -d /opt/node23/share/icu ] && cp -a /opt/node23/share/icu /usr/local/share/ 2>/dev/null || true
-        log "npm: 使用 /opt/node23/bin/npm ✓"
-    else
-        cat > /usr/local/bin/npm << NPMEOF
+    # npm wrapper: 使用 /usr/bin/npm（来自 musl Node.js 包）
+    mkdir -p /usr/local/bin
+    cat > /usr/local/bin/npm << NPMEOF
 #!/bin/sh
-SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-BASE="$(cd "$(dirname "$SELF")/.." && pwd)"
-export NODE_ICU_DATA="${BASE}/share/icu"
-export LD_LIBRARY_PATH="${BASE}/lib:$LD_LIBRARY_PATH"
-exec "${BASE}/bin/node" "${BASE}/lib/node_modules/npm/bin/npm-cli.js" "$@"
+SELF_DIR="/usr/bin"
+export NODE_ICU_DATA="/usr/share/icu"
+exec "${SELF_DIR}/node" "${SELF_DIR}/../lib/node_modules/npm/bin/npm-cli.js" "$@"
 NPMEOF
-        chmod +x /usr/local/bin/npm
-        log "npm wrapper 已创建 ✓"
-    fi
+    chmod +x /usr/local/bin/npm
+    cat > /usr/local/bin/npx << NPXEOF
+#!/bin/sh
+SELF_DIR="/usr/bin"
+export NODE_ICU_DATA="/usr/share/icu"
+exec "${SELF_DIR}/node" "${SELF_DIR}/../lib/node_modules/npm/bin/npx-cli.js" "$@"
+NPXEOF
+    chmod +x /usr/local/bin/npx
+    ln -sf /usr/bin/node /usr/local/bin/node 2>/dev/null || true
+    log "npm wrapper 已创建 ✓"
 
 
     if [ -z "$existing_node" ]; then
