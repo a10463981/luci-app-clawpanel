@@ -197,18 +197,18 @@ NPXEOF
         # 从 GitHub API 获取 a10463981/node-openwrt-arm64 的最新 v22 版本
         local NODE_VER
         if [ "$NODE_INSTALL_SOURCE" = "github" ]; then
+            # 从 releases HTML 页面解析最新 v22 版本（避免 API rate limit）
             pr "查询 GitHub 最新 v22 版本..."
             NODE_VER=$(curl -sL --connect-timeout 10 \
-                "https://api.github.com/repos/a10463981/node-openwrt-arm64/releases" 2>/dev/null \
-                | grep -o '"tag_name": "[^"]*"' \
-                | head -20 \
-                | grep 'v22\.' \
-                | head -1 \
-                | sed 's/.*"tag_name": "//;s/".*//') || true
+                "https://github.com/a10463981/node-openwrt-arm64/releases" 2>/dev/null \
+                | grep -o 'href="/a10463981/node-openwrt-arm64/releases/tag/[^"]*"' \
+                | sed 's/.*tag\///;s/"//' \
+                | grep '^v22\.' \
+                | head -1) || true
             : "${NODE_VER:=v22.15.1}"
             info "版本: $NODE_VER (来源: a10463981/node-openwrt-arm64)"
         else
-            local NODE_VER="v22.22.2"
+            NODE_VER="v22.22.2"
             info "版本: $NODE_VER (ClawPanel 最低要求 v22)"
         fi
 
