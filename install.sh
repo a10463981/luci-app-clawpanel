@@ -158,7 +158,11 @@ else
     fi
     pr "解压到 /usr/local..."
     mkdir -p /usr/local/bin /usr/local/lib /usr/local/share
-    tar -xJf "$NODE_TGZ" -C /tmp
+    if [ "$NODE_SOURCE" = "official" ]; then
+        tar -xJf "$NODE_TGZ" -C /tmp
+    else
+        tar -xzf "$NODE_TGZ" -C /tmp
+    fi
     NODE_SRC=""
     for d in /tmp/node-*; do [ -d "$d" ] && NODE_SRC="$d"; done
     [ -n "$NODE_SRC" ] && {
