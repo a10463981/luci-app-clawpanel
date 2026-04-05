@@ -22,12 +22,22 @@ pr()    { echo "$BLUE ▸ $1"; }
 # 全局变量
 #===========================================================
 ARCH="$(uname -m)"
+# x86_64: 官方 Node.js (glibc)；aarch64/arm64: 用户 GitHub (musl)
 case "$ARCH" in
-    aarch64|arm64) TARGET_ARCH_NODE="arm64"; TARGET_ARCH_CP="aarch64" ;;
-    x86_64)        TARGET_ARCH="x64" ;;
-    armv7l|armv7)  TARGET_ARCH="armv7l" ;;
-    armv6l|armv6)   TARGET_ARCH="armv6l" ;;
-    *)              err "不支持架构: $ARCH"; exit 1 ;;
+    x86_64)
+        TARGET_ARCH_NODE="x64"
+        NODE_INSTALL_SOURCE="official"
+        TARGET_ARCH_CP="amd64"
+        ;;
+    aarch64|arm64)
+        TARGET_ARCH_NODE="arm64"
+        NODE_INSTALL_SOURCE="github"
+        TARGET_ARCH_CP="arm64"
+        ;;
+    *)
+        err "不支持架构: $ARCH（仅支持 x86_64 和 aarch64/arm64）"
+        exit 1
+        ;;
 esac
 
 CP_BASE_PATH="${CP_BASE_PATH:-}"
@@ -159,7 +169,9 @@ cmd_setup() {
     #===========================================================
     step "第三步: 安装 Node.js（系统级）"
     #===========================================================
-    local existing_node
+    # 检测已有 Node.js
+    existing_node=$(_detect_node) || true
+
     # npm wrapper: 使用 /usr/bin/npm（来自 musl Node.js 包）
     mkdir -p /usr/local/bin
     cat > /usr/local/bin/npm << NPMEOF
@@ -188,13 +200,27 @@ NPXEOF
         local NODE_TGZ="/tmp/node-${TARGET_ARCH_NODE}.tar.xz"
         pr "下载 Node.js ${NODE_VER} for ${TARGET_ARCH_NODE}..."
 
-        # 仅从用户 GitHub 下载（musl 专用版本）
-        local NODE_URL="https://github.com/a10463981/node-openwrt-arm64/releases/download/v${NODE_VER#v}/node-${NODE_VER}-openwrt-arm64-fixed.tar.gz"
-        pr "来源: a10463981/node-openwrt-arm64"
-        if ! curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$NODE_URL" 2>/dev/null; then
-            err "Node.js 下载失败，请检查网络"
-            rm -f "$NODE_TGZ"
-            exit 1
+        # x86_64: 官网 / npmmirror；aarch64/arm64: 用户 GitHub
+        if [ "$NODE_INSTALL_SOURCE" = "official" ]; then
+            pr "来源: npmmirror.com (官方 x64)"
+            local NODE_URL="https://npmmirror.com/mirrors/node/${NODE_VER}/node-${NODE_VER}-linux-${TARGET_ARCH_NODE}.tar.xz"
+            if ! curl -fsSL --connect-timeout 120 -o "$NODE_TGZ" "$NODE_URL" 2>/dev/null; then
+                pr "回退: nodejs.org"
+                NODE_URL="https://nodejs.org/download/release/${NODE_VER}/node-${NODE_VER}-linux-${TARGET_ARCH_NODE}.tar.xz"
+                curl -fsSL --connect-timeout 120 -o "$NODE_TGZ" "$NODE_URL" || {
+                    err "Node.js 下载失败"
+                    rm -f "$NODE_TGZ"
+                    exit 1
+                }
+            fi
+        else
+            pr "来源: a10463981/node-openwrt-arm64 (musl 专用)"
+            local NODE_URL="https://github.com/a10463981/node-openwrt-arm64/releases/download/v${NODE_VER#v}/node-${NODE_VER}-openwrt-arm64-fixed.tar.gz"
+            curl -fsSL --connect-timeout 120 -o "$NODE_TGZ" "$NODE_URL" || {
+                err "Node.js 下载失败"
+                rm -f "$NODE_TGZ"
+                exit 1
+            }
         fi
         log "下载完成"
 
