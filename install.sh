@@ -26,7 +26,7 @@ done_() { echo "${GREEN}[✓]${NC} $1"; }
 #===========================================================
 ARCH="$(uname -m)"
 case "$ARCH" in
-    aarch64|arm64) TARGET_ARCH="arm64"; TARGET_ARCH_NODE="arm64"; TARGET_ARCH_CP="arm64" ;;
+    aarch64|arm64) TARGET_ARCH="arm64"; TARGET_ARCH_CP="arm64" ;;
     x86_64)        TARGET_ARCH="x64" ;;
     armv7l|armv7)  TARGET_ARCH="armv7l" ;;
     *)             err "不支持架构: $ARCH"; exit 1 ;;
@@ -118,19 +118,14 @@ elif [ -x "/usr/local/bin/node" ]; then
     log "Node.js 已安装: $(/usr/local/bin/node --version)"
 else
     pr "获取最新 LTS 版本..."
-    NODE_VER=$(curl -sL  "https://nodejs.org/dist/index.json" 2>/dev/null \
-        | grep -o '"version":"v[0-9][^"]*lts[^"]*"' \
-        | head -1 | grep -o 'v[0-9][^"]*' || echo "v22.22.2")
-    : "${NODE_VER:=v22.22.2}"
+    # ClawPanel 要求 Node.js v22+，强制使用 v22 LTS
+    NODE_VER="v22.22.2"
     info "版本: $NODE_VER"
 
     NODE_TGZ="/tmp/node-${TARGET_ARCH_NODE}.tar.xz"
     pr "下载..."
     URL="https://github.com/a10463981/node-openwrt-arm64/releases/download/v${NODE_VER#v}/node-${NODE_VER}-openwrt-arm64-fixed.tar.gz"
-    curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$URL" || {
-        URL="https://nodejs.org/download/release/${NODE_VER}/node-${NODE_VER}-linux-${TARGET_ARCH}.tar.xz"
-        curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$URL" || { err "Node.js 下载失败"; exit 1; }
-    }
+    curl -fsSL --connect-timeout 120 -o "$NODE_TGZ" "$URL" || { err "Node.js 下载失败，请检查网络"; exit 1; }
     pr "解压到 /usr/local..."
     mkdir -p /usr/local/bin /usr/local/lib /usr/local/share
     tar -xJf "$NODE_TGZ" -C /tmp

@@ -23,7 +23,7 @@ pr()    { echo "$BLUE ▸ $1"; }
 #===========================================================
 ARCH="$(uname -m)"
 case "$ARCH" in
-    aarch64|arm64) TARGET_ARCH_NODE="linuxmusl-arm64"; TARGET_ARCH_CP="aarch64" ;;
+    aarch64|arm64) TARGET_ARCH_NODE="arm64"; TARGET_ARCH_CP="aarch64" ;;
     x86_64)        TARGET_ARCH="x64" ;;
     armv7l|armv7)  TARGET_ARCH="armv7l" ;;
     armv6l|armv6)   TARGET_ARCH="armv6l" ;;
@@ -181,30 +181,20 @@ NPXEOF
 
 
     if [ -z "$existing_node" ]; then
-        pr "获取最新 LTS 版本..."
-        local NODE_VER
-        NODE_VER=$(curl -sL  "https://nodejs.org/dist/index.json" 2>/dev/null \
-            | grep -o '"version":"v[0-9][^"]*lts[^"]*"' \
-            | head -1 \
-            | grep -o 'v[0-9][^"]*' \
-            | head -1) || true
-        : "${NODE_VER:=v22.22.2}"
-        info "选择版本: $NODE_VER"
+        # ClawPanel 要求 Node.js v22+，强制使用 v22 LTS
+        local NODE_VER="v22.22.2"
+        info "强制版本: $NODE_VER (ClawPanel 最低要求 v22)"
 
         local NODE_TGZ="/tmp/node-${TARGET_ARCH_NODE}.tar.xz"
         pr "下载 Node.js ${NODE_VER} for ${TARGET_ARCH_NODE}..."
 
-        # 优先 npmmirror（国内）
+        # 仅从用户 GitHub 下载（musl 专用版本）
         local NODE_URL="https://github.com/a10463981/node-openwrt-arm64/releases/download/v${NODE_VER#v}/node-${NODE_VER}-openwrt-arm64-fixed.tar.gz"
-        pr "来源: npmmirror.com"
+        pr "来源: a10463981/node-openwrt-arm64"
         if ! curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$NODE_URL" 2>/dev/null; then
-            NODE_URL="https://nodejs.org/download/release/${NODE_VER}/node-${NODE_VER}-linux-${TARGET_ARCH_NODE}.tar.xz"
-            pr "回退: nodejs.org"
-            curl -fsSL --connect-timeout 15 -o "$NODE_TGZ" "$NODE_URL" || {
-                err "Node.js 下载失败，请检查网络"
-                rm -f "$NODE_TGZ"
-                exit 1
-            }
+            err "Node.js 下载失败，请检查网络"
+            rm -f "$NODE_TGZ"
+            exit 1
         fi
         log "下载完成"
 
