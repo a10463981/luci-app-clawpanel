@@ -286,7 +286,7 @@ function cpSvc(a){
     setTimeout(function(){cpLoadStatus();cpCloseRes()},2000);
   }, function(err){ cpCloseRes(); alert('操作失败: '+err); console.error('Service action error:', err); });
 }
-function cpOpenPanel(){var u='http://'+(_lan||'192.168.1.1')+':'+(_port||'19527');window.open(u,'_blank');console.log('Opening:',u)}
+function cpOpenPanel(){window.open('http://192.168.1.1:19527','_blank')}
 
 function cpShowRes(tp,msg){
   var el=$('cp-res');el.className='cp-res show '+tp;el.textContent=msg

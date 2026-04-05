@@ -429,12 +429,15 @@ function action_uninstall()
 	log("Cleaning up UCI config...")
 	sh("uci set clawpanel.main.enabled='0' 2>/dev/null; uci commit clawpanel 2>/dev/null")
 	log("UCI config cleaned (enabled=0)")
+	log("卸载 Node.js/npm...")
+	sh("rm -f /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/openclaw 2>/dev/null; rm -rf /usr/local/lib/node_modules 2>/dev/null; rm -rf /usr/lib/node_modules 2>/dev/null; rm -rf /usr/local/share/icu 2>/dev/null; echo done")
+	log("Node.js/npm 已卸载")
+
 	log("=== Uninstall Finished ===")
 
 	-- Write completed marker
 	local sf = io.open("/tmp/clawpanel-uninstall.done", "w")
-	if sf then sf:write("done
-"); sf:close() end
+	if sf then sf:write("done\n"); sf:close() end
 
 	if logf then logf:close() end
 
