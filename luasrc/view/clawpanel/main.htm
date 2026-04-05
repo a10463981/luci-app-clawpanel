@@ -98,6 +98,7 @@ local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface
         <button class="cp-btn cp-g" onclick="cpSvc('start')">▶ 启动</button>
         <button class="cp-btn cp-g" onclick="cpSvc('restart')">↻ 重启</button>
         <button class="cp-btn cp-g" onclick="cpSvc('stop')">■ 停止</button>
+        <button class="cp-btn cp-sv" onclick="alert('JS working! Click service buttons test.'); console.log('Test button clicked')">🧪 测试</button>
         <button class="cp-btn cp-sv" onclick="cpOpenPanel()">🌐 打开面板</button>
         <button class="cp-btn cp-g" onclick="cpCheckUpdate()">🔍 检测升级</button>
         <button class="cp-btn cp-dg" onclick="cpShowUninstall()">🗑 卸载</button>
@@ -429,6 +430,12 @@ function cpCloseModals(){
   if(_upt){clearInterval(_upt);_upt=null}
 }
 document.addEventListener('click',function(e){if(e.target.classList.contains('cp-modal'))cpCloseModals()});
-(function(){cpLoadStatus();cpLoadNode();setInterval(cpLoadStatus,8000)})();
+(function(){
+  console.log('Page loaded, calling cpLoadStatus and cpLoadNode');
+  try { cpLoadStatus(); } catch(e) { console.error('cpLoadStatus error:', e); }
+  try { cpLoadNode(); } catch(e) { console.error('cpLoadNode error:', e); }
+  setInterval(cpLoadStatus, 8000);
+  console.log('Auto-refresh set for 8s');
+})();
 </script>
 <%+footer%>
