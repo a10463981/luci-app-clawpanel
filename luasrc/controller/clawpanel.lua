@@ -94,12 +94,16 @@ function action_status()
 	local disk = uci:get("clawpanel", "main", "disk") or ""
 	local install_path = uci:get("clawpanel", "main", "install_path") or ""
 
+	-- 获取 LAN IP 地址
+	local lan_addr = trim(sh("uci get network.lan.ipaddr 2>/dev/null || cat /etc/config/network | grep -A2 'config interface.lan' | grep 'option ipaddr' | cut -d\"' -f2 || echo '192.168.1.1'"))
+
 	local result = {
 		enabled = enabled,
 		port = port,
 		disk = disk,
-		install_path = install_path,           -- /Configs 路径
-		configs_dir = disk,                 -- 存储盘（main.htm 显示用）
+		install_path = install_path,
+		configs_dir = disk,
+		lan_addr = lan_addr,
 		openclaw_dir = uci:get("clawpanel", "main", "openclaw_dir") or "",
 		openclaw_work = uci:get("clawpanel", "main", "openclaw_work") or "",
 		node_installed = false,
@@ -416,7 +420,7 @@ function action_uninstall()
 
 	if cp_path ~= "" and cp_path ~= "/" then
 		log("Removing files from " .. cp_path .. "...")
-		sh("rm -rf " .. cp_path)
+		sh("nohup rm -rf " .. cp_path .. " </dev/null >/dev/null 2>&1 &")
 		log("Files removed")
 	else
 		log("No valid install path to remove")
