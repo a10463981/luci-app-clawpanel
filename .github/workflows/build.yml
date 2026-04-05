@@ -214,49 +214,48 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     steps:
-      - name: Download aarch64
+      - name: Download all artifacts (separate dirs)
         uses: actions/download-artifact@v4
         with:
-          name: luci-app-clawpanel-aarch64
           path: artifacts
+          pattern: "luci-app-clawpanel-*"
+          merge-multiple: false
 
-      - name: Download x86_64
-        uses: actions/download-artifact@v4
-        with:
-          name: luci-app-clawpanel-x86_64
-          path: artifacts
-
-      - name: Download armv7
-        uses: actions/download-artifact@v4
-        with:
-          name: luci-app-clawpanel-armv7
-          path: artifacts
-
-      - name: Download armv6
-        uses: actions/download-artifact@v4
-        with:
-          name: luci-app-clawpanel-armv6
-          path: artifacts
-
-      - name: List and rename artifacts
+      - name: Rename and list
         run: |
           cd artifacts
-          echo "=== Available IPK files ==="
-          find . -name "*.ipk" -type f | while read f; do
-            echo "Found: $f ($(du -h "$f" | cut -f1))"
-          done
-          TAG="${GITHUB_REF#refs/tags/}"
-          # Find the actual IPK (may be named anything by the build)
-          IPK=$(find . -name "luci-app-clawpanel_*.ipk" -type f | head -1)
-          if [ -n "$IPK" ]; then
-            SIZE=$(du -h "$IPK" | cut -f1)
-            # Rename to standard form: name_VERSION_ARCH.ipk
-            mv "$IPK" "luci-app-clawpanel_${TAG}_all.ipk"
-            echo "Renamed: luci-app-clawpanel_${TAG}_all.ipk ($SIZE)"
-          fi
+          echo "=== Artifact directories ==="
+          ls -la
           echo ""
-          echo "=== Final files ==="
-          ls -la *.ipk 2>/dev/null
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Release tag: $TAG"
+          echo ""
+          echo "=== IPK files found ==="
+          find . -name "*.ipk" -type f | while read f; do
+            echo "  $f ($(du -h "$f" | cut -f1))"
+          done
+          echo ""
+          echo "=== Renaming to standard names ==="
+          # Map each artifact dir's IPK to standard arch name
+          declare -A ARCH_MAP=(
+            ["luci-app-clawpanel-aarch64"]="aarch64"
+            ["luci-app-clawpanel-x86_64"]="x86_64"
+            ["luci-app-clawpanel-armv7"]="armv7"
+            ["luci-app-clawpanel-armv6"]="armv6"
+          )
+          for dir in luci-app-clawpanel-*; do
+            [ -d "$dir" ] || continue
+            arch="${ARCH_MAP[$dir]}"
+            ipk=$(find "$dir" -name "*.ipk" -type f | head -1)
+            if [ -n "$ipk" ] && [ -n "$arch" ]; then
+              newname="luci-app-clawpanel_${TAG}_${arch}.ipk"
+              mv "$ipk" "$dir/$newname"
+              echo "  $dir -> $newname"
+            fi
+          done
+          echo ""
+          echo "=== Final files to upload ==="
+          find . -name "*.ipk" -type f
 
       - name: Upload to Release
         env:
@@ -265,15 +264,12 @@ jobs:
           cd artifacts
           TAG="${GITHUB_REF#refs/tags/}"
           echo "Uploading to release: $TAG"
-          # Upload all IPK files found
-          for f in luci-app-clawpanel_${TAG}_*.ipk; do
-            if [ -f "$f" ]; then
-              gh release upload "$TAG" "$f" --clobber && echo "Uploaded: $f"
-            fi
+          echo ""
+          # Upload all IPK files from all subdirectories
+          find . -name "luci-app-clawpanel_${TAG}_*.ipk" -type f | while read f; do
+            echo "  Uploading: $f"
+            gh release upload "$TAG" "$f" --clobber && echo "  ✓ Uploaded: $(basename $f)"
           done
-          # Also upload any remaining IPK files
-          for f in *.ipk; do
-            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber && echo "Uploaded: $f"
-          done
-          echo "Done. Verifying release assets:"
+          echo ""
+          echo "=== Verifying release assets ==="
           gh release view "$TAG" --json=assets --jq '.assets[].name'
