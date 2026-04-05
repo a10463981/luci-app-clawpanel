@@ -6,6 +6,14 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.2.0)'
+        required: false
+        type: string
+
+env:
+  IPK_VERSION: ${{ github.event.inputs.version || github.event.release.tag_name || '1.2.0' }}
 
 jobs:
   build-aarch64:
@@ -153,8 +161,56 @@ jobs:
           name: luci-app-clawpanel-armv7
           path: ${{ steps.find.outputs.ipk }}
 
+  build-armv6:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gcc gawk \
+            libncurses5-dev libssl-dev perl-base python3 python3-distutils python3-yaml \
+            rsync unzip wget xz-utils file bc 2>&1 | tail -3
+
+      - name: Download SDK (armvirt/32)
+        run: |
+          mkdir -p /opt/sdk
+          wget -q "https://downloads.openwrt.org/releases/22.03.3/targets/armvirt/32/openwrt-sdk-22.03.3-armvirt-32_gcc-11.2.0_musl_eabi.Linux-x86_64.tar.xz" \
+            -O /tmp/sdk-armv6.tar.xz
+          tar xf /tmp/sdk-armv6.tar.xz -C /opt/sdk
+
+      - name: Prepare
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cp -r "${{ github.workspace }}/." "$SDK_DIR/package/luci-app-clawpanel/"
+          cd "$SDK_DIR"
+          make defconfig 2>/dev/null || true
+          ./scripts/feeds update -a 2>&1 | tail -3
+          ./scripts/feeds install -a -p luci 2>&1 | tail -5
+
+      - name: Build
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          cd "$SDK_DIR"
+          make package/luci-app-clawpanel/compile V=s 2>&1 | tail -40
+
+      - name: Find artifact
+        id: find
+        run: |
+          SDK_DIR=$(ls -d /opt/sdk/*/ | head -1)
+          IPK=$(find "$SDK_DIR" -name "luci-app-clawpanel_*.ipk" -type f 2>/dev/null | head -1)
+          echo "ipk=$IPK" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        if: steps.find.outputs.ipk != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-clawpanel-armv6
+          path: ${{ steps.find.outputs.ipk }}
+
   release:
-    needs: [build-aarch64, build-x86_64, build-armv7]
+    needs: [build-aarch64, build-x86_64, build-armv7, build-armv6]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     steps:
@@ -168,10 +224,15 @@ jobs:
       - name: Rename artifacts
         run: |
           cd artifacts
-          # Rename based on architecture
-          [ -f "luci-app-clawpanel-aarch64/luci-app-clawpanel_*.ipk" ] && mv luci-app-clawpanel-aarch64/luci-app-clawpanel_*.ipk luci-app-clawpanel_1.1.2_aarch64.ipk
-          [ -f "luci-app-clawpanel-x86_64/luci-app-clawpanel_*.ipk" ] && mv luci-app-clawpanel-x86_64/luci-app-clawpanel_*.ipk luci-app-clawpanel_1.1.2_x86_64.ipk
-          [ -f "luci-app-clawpanel-armv7/luci-app-clawpanel_*.ipk" ] && mv luci-app-clawpanel-armv7/luci-app-clawpanel_*.ipk luci-app-clawpanel_1.1.2_armv7.ipk
+          VER="${{ env.IPK_VERSION }}"
+          # Remove leading 'v' if present
+          VER="${VER#v}"
+          echo "Version: $VER"
+          for arch in aarch64 x86_64 armv7 armv6; do
+            for f in luci-app-clawpanel-${arch}/luci-app-clawpanel_*.ipk; do
+              [ -f "$f" ] && mv "$f" "luci-app-clawpanel_${VER}_${arch}.ipk" && echo "Renamed: luci-app-clawpanel_${VER}_${arch}.ipk"
+            done
+          done
           ls -la
 
       - name: Upload to Release
@@ -180,6 +241,7 @@ jobs:
         run: |
           cd artifacts
           TAG="${GITHUB_REF#refs/tags/}"
-          [ -f "luci-app-clawpanel_1.1.2_aarch64.ipk" ] && gh release upload "$TAG" luci-app-clawpanel_1.1.2_aarch64.ipk --clobber
-          [ -f "luci-app-clawpanel_1.1.2_x86_64.ipk" ] && gh release upload "$TAG" luci-app-clawpanel_1.1.2_x86_64.ipk --clobber
-          [ -f "luci-app-clawpanel_1.1.2_armv7.ipk" ] && gh release upload "$TAG" luci-app-clawpanel_1.1.2_armv7.ipk --clobber
+          echo "Uploading to release: $TAG"
+          for f in luci-app-clawpanel_${IPK_VERSION}_*.ipk; do
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber && echo "Uploaded: $f"
+          done
