@@ -133,7 +133,9 @@ function action_status()
 		end
 	end
 
-	local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
+	if install_path ~= "" then
+		local cp_bin = install_path ~= "" and (install_path .. "/clawpanel/clawpanel") or ""
+
 		-- Read .version file first (fast, written at install time)
 		local vf = io.open(install_path .. "/clawpanel/.version", "r")
 		if vf then
@@ -174,9 +176,16 @@ function action_status()
 
 	if disk ~= "" then
 		local df_out = trim(sh("df -m '" .. disk .. "' 2>/dev/null | tail -1"))
-		local avail_raw = df_out and df_out:match("^%d+%s+%d+%s+%d+%s+(%d+)")
-		if avail_raw then
-			local avail_mb = tonumber(avail_raw) or 0
+		local avail_mb = 0
+		for tok in df_out:gmatch("[^\n]+") do
+			local fields = {}
+			for w in tok:gmatch("%S+") do table.insert(fields, w) end
+			local mounted = fields[#fields] or ""
+			if #fields >= 6 and mounted == disk then
+				avail_mb = tonumber(fields[4]) or 0
+			end
+		end
+		if avail_mb > 0 then
 			result.disk_free = (avail_mb >= 1024) and (string.format("%.1f GB", avail_mb / 1024)) or (avail_mb .. " MB")
 		end
 	elseif install_path ~= "" then
@@ -460,16 +469,23 @@ function action_disks()
 				if not is_system and fs ~= "tmpfs" and fs ~= "devpts" and fs ~= "devtmpfs"
 				   and fs ~= "sysfs" and fs ~= "proc" and fs ~= "cgroup2fs"
 				   and fs ~= "squashfs" and fs ~= "romfs" then
-					local df = io.popen("df -m '" .. mp .. "' 2>/dev/null")
+					-- 获取可用空间（df -m 避免路径含 / 导致模式错误）
+					local df = io.popen("df -m '" .. mp .. "' 2>/dev/null | tail -1")
 					local df_out = df and df:read("*a") or ""
 					if df then df:close() end
 					local avail_mb = 0
 					local total_mb = 0
 					for tok in df_out:gmatch("[^\n]+") do
-						local avail_raw = tok:match("^%d+%s+%d+%s+%d+%s+(%d+)%s+%d+%%%s+" .. mp:gsub("/", "%%%/") .. "$")
-						if avail_raw then avail_mb = tonumber(avail_raw) or 0 end
-						local total_raw = tok:match("^(%d+)%s+%d+%s+%d+%s+%d+%s+%d+%%")
-						if total_raw then total_mb = tonumber(total_raw) or 0 end
+						-- df -m 输出: Filesystem 1-blocks Used Available Use% Mounted
+						-- 用空格分割后第4列=Available，第5列=Use%，第6列+=Mounted
+						local fields = {}
+						for w in tok:gmatch("%S+") do table.insert(fields, w) end
+						-- 找到 Mounted 列（第6+个字段），检查是否匹配当前挂载点
+						local mounted = fields[#fields] or ""
+						if #fields >= 6 and mounted == mp then
+							avail_mb = tonumber(fields[4]) or 0
+							total_mb = tonumber(fields[2]) or 0
+						end
 					end
 					local size_str = ""
 					if total_mb >= 1024 then
@@ -573,11 +589,20 @@ function action_mounts()
 					fs == "overlay" or fs == "btrfs" or fs == "xfs"
 				) then
 					-- 获取可用空间
-					local df = io.popen("df -m '" .. mp .. "' 2>/dev/null")
+					local df = io.popen("df -m '" .. mp .. "' 2>/dev/null | tail -1")
 					local df_out = df and df:read("*a") or ""
 					if df then df:close() end
-					local avail_mb = tonumber(df_out:match("\n(%d+)%s+%d+%s+%d+%s+%d+%s+%d%%%s+" .. mp:gsub("/", "%%%/"))) or 0
-					local total_mb = tonumber(df_out:match("(%d+)%s+%d+%s+%d+%s+%d+%s+%d%%%s+" .. mp:gsub("/", "%%%/"))) or 0
+					local avail_mb = 0
+					local total_mb = 0
+					for tok in df_out:gmatch("[^\n]+") do
+						local fields = {}
+						for w in tok:gmatch("%S+") do table.insert(fields, w) end
+						local mounted = fields[#fields] or ""
+						if #fields >= 6 and mounted == mp then
+							avail_mb = tonumber(fields[4]) or 0
+							total_mb = tonumber(fields[2]) or 0
+						end
+					end
 					local size_str = ""
 					if total_mb > 1024 then
 						size_str = string.format("%.1f GB", total_mb / 1024)
@@ -607,7 +632,7 @@ end
 -- 安装前系统检查（内存、磁盘）
 function action_check_system()
 	local http = require "luci.http"
-	local install_path = http.formvalue("install_path") or ""
+	local disk = http.formvalue("disk") or ""
 
 	local memory_mb = 0
 	local f = io.open("/proc/meminfo", "r")
@@ -619,11 +644,18 @@ function action_check_system()
 	end
 
 	local disk_mb = 0
-	if install_path ~= "" then
-		local df = io.popen("df -m '" .. install_path .. "' 2>/dev/null")
+	if disk ~= "" then
+		local df = io.popen("df -m '" .. disk .. "' 2>/dev/null | tail -1")
 		local df_out = df and df:read("*a") or ""
 		if df then df:close() end
-		disk_mb = tonumber(df_out:match("\n(%d+)%s+%d+%s+%d+%s+%d+%s+%d%%%s+" .. install_path:gsub("/", "%%%/"))) or 0
+		for tok in df_out:gmatch("[^\n]+") do
+			local fields = {}
+			for w in tok:gmatch("%S+") do table.insert(fields, w) end
+			local mounted = fields[#fields] or ""
+			if #fields >= 6 and mounted == disk then
+				disk_mb = tonumber(fields[4]) or 0
+			end
+		end
 	end
 
 	local pass = (memory_mb >= 256) and (disk_mb >= 500)
