@@ -264,9 +264,12 @@ function cpLoadNode(){
 }
 
 function cpSvc(a){
+  // DEBUG: Check if function is called
+  alert('cpSvc called with: ' + a + '\nURL: ' + BASE+'/service_ctl?action='+a);
   var t={start:'启动',restart:'重启',stop:'停止',enable:'启用',disable:'禁用'};
   var url = BASE+'/service_ctl?action='+a;
   cpShowRes('inf',(t[a]||a)+'请求已发送...');
+  console.log('Calling cpAjax with:', url);
   cpAjax(url, function(d){
     console.log('Service action success:', d);
     setTimeout(function(){cpLoadStatus();cpCloseRes()},2000);
