@@ -237,7 +237,7 @@ else
         /usr/local/bin/npm install -g openclaw \
             --prefix "$OPENCLAW_DIR" \
             --registry https://registry.npmjs.org 2>&1 | tail -3 || {
-            err "OpenClaw 安装失败"; exit 1; }
+            err "OpenClaw 安装失败，跳过（ClawPanel 仍可正常使用）"; }
     }
 fi
 
@@ -248,7 +248,7 @@ for p in "${OPENCLAW_DIR}/node_modules/openclaw/openclaw.mjs" \
 done
 
 [ -z "$OPENCLAW_MJS" ] && OPENCLAW_MJS="/usr/local/lib/node_modules/openclaw/openclaw.mjs"
-[ -f "$OPENCLAW_MJS" ] || { err "找不到 openclaw.mjs"; exit 1; }
+[ -f "$OPENCLAW_MJS" ] || { warn "找不到 openclaw.mjs，跳过（OpenClaw CLI 稍后可手动安装）"; OPENCLAW_MJS=""; }
 
 mkdir -p /usr/local/lib/node_modules
 rm -rf /usr/local/lib/node_modules/openclaw

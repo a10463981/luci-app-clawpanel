@@ -348,7 +348,8 @@ PROFILEOF
 
         if [ "$NPM_OK" != "1" ]; then
             err "OpenClaw npm 安装失败"
-            exit 1
+            warn "ClawPanel 主程序仍可正常使用（OpenClaw CLI 稍后可手动安装）"
+            return 0
         fi
         log "OpenClaw 安装完成"
     # Patch Unicode property escapes for this Node.js V8 build
@@ -376,9 +377,8 @@ PROFILEOF
     done
 
     if [ -z "$OPENCLAW_MJS" ]; then
-        err "找不到 openclaw.mjs"
-        ls "$OPENCLAW_DIR"/node_modules/openclaw/ 2>/dev/null || true
-        exit 1
+        warn "找不到 openclaw.mjs，跳过 OpenClaw CLI 配置"
+        return 0
     fi
     log "OpenClaw 入口: $OPENCLAW_MJS"
 
