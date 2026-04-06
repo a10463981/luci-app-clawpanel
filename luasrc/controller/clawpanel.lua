@@ -830,23 +830,21 @@ end
 function action_plugin_versions()
 	local http = require "luci.http"
 
-	-- 已知版本列表（git ls-remote 在 OpenWrt 不支持 https，用硬编码）
-	local known = {
-		{raw="v1.3.1", version="1.3.1"},
-		{raw="v1.3.0", version="1.3.0"},
-		{raw="v1.2.6", version="1.2.6"},
-		{raw="v1.2.0", version="1.2.0"},
-		{raw="v1.1.0", version="1.1.0"},
-		{raw="v1.0.0", version="1.0.0"},
-	}
+	-- 获取所有 tag 并按 semver 排序
+	local tags_raw = trim(sh("git ls-remote --tags https://github.com/a10463981/luci-app-clawpanel 2>/dev/null | grep -v '{}' | awk -F'/' '{print $3}' | grep '^v' | sort -V | uniq"))
 	local versions = {}
-	for _, item in ipairs(known) do versions[#versions+1] = item end
+	for tag in tags_raw:gmatch("[^\n]+") do
+		local v = tag:gsub("^v", ""):gsub("[^%d%.]", "")
+		if v and v ~= "" then
+			table.insert(versions, { raw = tag, version = v })
+		end
+	end
 
 	-- 倒序（最新在前）
 	table.sort(versions, function(a, b)
+		-- 简单字符串版本比较
 		local function parse_ver(s)
-			local t = {}
-			for w in s:gmatch("%d+") do t[#t+1] = tonumber(w) or 0 end
+			local t={}; for w in s:gmatch("%d+") do table.insert(t, tonumber(w)) end
 			return t
 		end
 		local ta, tb = parse_ver(a.version), parse_ver(b.version)
@@ -858,7 +856,7 @@ function action_plugin_versions()
 		return false
 	end)
 
-	-- 读取本地版本
+	-- 获取本地版本
 	local local_ver = "1.0.0"
 	local vf = io.open("/usr/share/clawpanel/VERSION", "r")
 	if vf then
@@ -872,6 +870,10 @@ function action_plugin_versions()
 		local_version = local_ver
 	})
 end
+
+--===========================================================
+-- 获取所有 ClawPanel 版本（pro + lite）
+--===========================================================
 function action_clawpanel_versions()
 	local http = require "luci.http"
 
