@@ -270,13 +270,12 @@ log "ClawPanel 二进制完成"
 # 配置文件
 #===========================================================
 step "配置文件"
-
 cat > "${CLAWPANEL_DATA}/clawpanel.json" << 'CEOF'
 {
   "port": 19527,
   "dataDir": "%DATA_DIR%",
   "openClawDir": "%OPENCLAW_DATA_DIR%",
-  "openClawApp": "",
+  "openClawApp": "/Configs/openclaw/bin/openclaw.mjs",
   "openClawWork": "%OPENCLAW_WORK_DIR%",
   "edition": "pro",
   "jwtSecret": "clawpanel-secret-change-me",
@@ -285,6 +284,9 @@ cat > "${CLAWPANEL_DATA}/clawpanel.json" << 'CEOF'
 }
 CEOF
 sed -i "s|%DATA_DIR%|${CLAWPANEL_DATA}|g" "${CLAWPANEL_DATA}/clawpanel.json"
+sed -i "s|%OPENCLAW_DATA_DIR%|${OPENCLAW_DATA}|g" "${CLAWPANEL_DATA}/clawpanel.json"
+sed -i "s|%OPENCLAW_WORK_DIR%|${OPENCLAW_WORK}|g" "${CLAWPANEL_DATA}/clawpanel.json"
+log "clawpanel.json"
 sed -i "s|%OPENCLAW_DATA_DIR%|${OPENCLAW_DATA}|g" "${CLAWPANEL_DATA}/clawpanel.json"
 sed -i "s|%OPENCLAW_WORK_DIR%|${OPENCLAW_WORK}|g" "${CLAWPANEL_DATA}/clawpanel.json"
 log "clawpanel.json"
@@ -338,7 +340,7 @@ start_service() {
         export PATH="/usr/local/bin:$PATH"
         export NODE_ICU_DATA="/usr/local/share/icu"
         export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
-        setsid /bin/bash -c "$CLAWPANEL_BIN >> /tmp/clawpanel.log 2>&1 &"
+        setsid env HOME=/root PATH=/usr/local/bin:$PATH NODE_ICU_DATA=/usr/local/share/icu LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH ${CLAWPANEL_BIN} >> /tmp/clawpanel.log 2>&1 < /dev/null &
     )
     local i=0
     while [ $i -lt 20 ]; do
