@@ -785,35 +785,36 @@ end
 function action_check_update()
 	local http = require "luci.http"
 
+	-- 读取本地版本
 	local local_ver = "1.0.0"
 	local f = io.open("/usr/share/clawpanel/VERSION", "r")
 	if f then
-		local_ver = trim(f:read("*a") or "")
+		local_ver = trim(f:read("*a") or ""
 		f:close()
 	end
 	if local_ver == "" then local_ver = "1.0.0" end
 
-	-- 获取所有 tag 并找最新
-	local tags_raw = trim(sh("git ls-remote --tags https://github.com/a10463981/luci-app-clawpanel 2>/dev/null | grep -v '{}' | awk -F'/' '{print $3}' | grep '^v' | sort -V | tail -20"))
-	local latest_ver = local_ver
-	if tags_raw and tags_raw ~= "" then
-		for tag in tags_raw:gmatch("[^\n]+") do
-			local v = tag:gsub("^v", ""):gsub("[^%d%.]", "")
-			if v and v ~= "" then
-				-- semver 比较（简化版）
-				local function ver_cmp(a, b)
-					local ta, tb = {}, {}
-					for w in a:gmatch("%d+") do table.insert(ta, tonumber(w)) end
-					for w in b:gmatch("%d+") do table.insert(tb, tonumber(w)) end
-					for i=1, math.max(#ta, #tb) do
-						local da, db = ta[i] or 0, tb[i] or 0
-						if da ~= db then return da > db end
-					end
-					return false
-				end
-				if ver_cmp(v, latest_ver) then latest_ver = v end
-			end
+	-- 已知版本列表（git ls-remote 在 OpenWrt 可能不可用，使用已知版本比较）
+	-- 优先级：1.3.1 > 1.3.0 > 1.2.6 > 1.2.0 > 1.1.0 > 1.0.0
+	local known = {
+		"1.3.1", "1.3.0", "1.2.6", "1.2.5", "1.2.0", "1.1.0", "1.0.0"
+	}
+
+	-- 从已知版本中找最新（简单 semver 字符串比较）
+	local function ver_cmp(a, b)
+		local ta, tb = {}, {}
+		for w in a:gmatch("%d+") do ta[#ta+1] = tonumber(w) or 0 end
+		for w in b:gmatch("%d+") do tb[#tb+1] = tonumber(w) or 0 end
+		for i=1, math.max(#ta, #tb) do
+			local da, db = ta[i] or 0, tb[i] or 0
+			if da ~= db then return da > db end
 		end
+		return false
+	end
+
+	local latest_ver = local_ver
+	for _, v in ipairs(known) do
+		if ver_cmp(v, latest_ver) then latest_ver = v end
 	end
 
 	http.prepare_content("application/json")
@@ -830,14 +831,19 @@ end
 function action_plugin_versions()
 	local http = require "luci.http"
 
-	-- 获取所有 tag 并按 semver 排序
-	local tags_raw = trim(sh("git ls-remote --tags https://github.com/a10463981/luci-app-clawpanel 2>/dev/null | grep -v '{}' | awk -F'/' '{print $3}' | grep '^v' | sort -V | uniq"))
+	-- 已知版本列表（git ls-remote 在 OpenWrt 不支持 https，回退使用已知版本）
+	-- 优先级：1.3.1 > 1.3.0 > 1.2.6 > 1.2.0 > 1.1.0 > 1.0.0
+	local known = {
+		{raw="v1.3.1", version="1.3.1"},
+		{raw="v1.3.0", version="1.3.0"},
+		{raw="v1.2.6", version="1.2.6"},
+		{raw="v1.2.0", version="1.2.0"},
+		{raw="v1.1.0", version="1.1.0"},
+		{raw="v1.0.0", version="1.0.0"},
+	}
 	local versions = {}
-	for tag in tags_raw:gmatch("[^\n]+") do
-		local v = tag:gsub("^v", ""):gsub("[^%d%.]", "")
-		if v and v ~= "" then
-			table.insert(versions, { raw = tag, version = v })
-		end
+	for _, item in ipairs(known) do
+		versions[#versions+1] = {raw=item.raw, version=item.version}
 	end
 
 	-- 倒序（最新在前）

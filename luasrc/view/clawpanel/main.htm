@@ -291,7 +291,7 @@ function cpLoadStatus(){
     var auEl=$('cp-s-au');
     if(d.enabled==='1'){auEl.textContent='✓ 已启用';auEl.className='val ok'}
     else{auEl.textContent='✕ 已禁用';auEl.className='val err'}
-    if(d.port){_port=d.port;$('cp-guide-port').textContent=d.port}
+    var prev_lan=_lan;_lan=d.lan_addr||prev_lan||'192.168.1.1';_port=d.port||'19527';$('cp-guide-port').textContent=_port
     if(d.configs_dir||d.disk)$('cp-tree-mnt').textContent=d.configs_dir||d.disk||'/mnt/sda1';
   });
 }
@@ -352,7 +352,7 @@ function cpSvc(a){
   });
 }
 
-function cpOpenPanel(){window.open('http://'+_lan+':'+_port,'_blank')}
+function cpOpenPanel(){var panel_lan=_lan||'192.168.1.1';window.open('http://'+panel_lan+':'+_port,'_blank')}
 
 function cpShowRes(tp,msg){
   var el=$('cp-res');el.className='cp-res show '+tp;el.textContent=msg
