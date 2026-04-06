@@ -19,7 +19,7 @@ local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface
 .cp-card{background:#fff;border:1px solid #e1e4e8;border-radius:10px;margin-bottom:16px;overflow:hidden}
 .cp-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:linear-gradient(135deg,#4a90d9,#357abd);color:#fff;font-size:14px;font-weight:600}
 .cp-body{padding:0}
-.cp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax:200px,1fr));gap:0}
+.cp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px, 1fr);gap:0}
 .cp-item{padding:10px 16px;border-bottom:1px solid #e1e4e8;border-right:1px solid #e1e4e8;font-size:13px}
 .cp-item:nth-child(even){border-right:none}
 .cp-item .lbl{color:#656d76;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
@@ -574,3 +574,6 @@ document.addEventListener('click',function(e){if(e.target.classList.contains('cp
   setInterval(cpLoadStatus, 8000);
 })();
 </script>
+
+</div>
+<%+footer%>
