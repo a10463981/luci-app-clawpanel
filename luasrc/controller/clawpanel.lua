@@ -94,15 +94,15 @@ local function wait_port_free(port, max_wait)
 	return false
 end
 
--- 杀进程（统一用 pkill，不依赖 killall）
+-- 杀进程（统一用 killall，不依赖 pkill）
 local function kill_clawpanel()
 	-- 先读 PID 文件精确杀
 	local pid = read_pid()
 	if pid then
 		sh("kill -9 " .. pid .. " 2>/dev/null")
 	end
-	-- 再用 pkill 兜底（杀所有相关进程）
-	sh("pkill -9 -f 'clawpanel/clawpanel' 2>/dev/null")
+	-- 再用 killall 兜底（杀所有相关进程）
+	sh("killall -9 clawpanel 2>/dev/null")
 	sh("rm -f " .. PID_FILE)
 end
 
