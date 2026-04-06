@@ -92,7 +92,7 @@ local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface
         <button class="cp-btn cp-gy" id="cp-btn-enable" onclick="cpSvc('enable')">⏻ 自启</button>
         <button class="cp-btn cp-gy" id="cp-btn-disable" onclick="cpSvc('disable')">⊘ 禁用</button>
         <button class="cp-btn cp-o" id="cp-btn-open" onclick="cpOpenPanel()">🌐 面板</button>
-        <button class="cp-btn cp-g" id="cp-btn-update" onclick="cpCheckUpdate()">🔍 更新</button>
+        <button class="cp-btn cp-g" id="cp-btn-update" onclick="cpShowVersions()">🔍 版本</button>
         <button class="cp-btn cp-dg" id="cp-btn-uninstall" onclick="cpShowUninstall()">🗑 卸载</button>
       </div>
       <div id="cp-res" class="cp-res"></div>
@@ -186,6 +186,25 @@ local lan_addr = sys.exec("cat /etc/config/network | grep -A 3 'config interface
   <div class="cp-mfoot">
     <button class="cp-btn cp-o" onclick="cpCloseModals()">取消</button>
     <button class="cp-btn cp-dg" id="cp-un-btn" onclick="cpDoUninstall()">确定卸载</button>
+  </div>
+</div>
+</div>
+
+<!-- 版本选择弹窗 -->
+<div class="cp-modal" id="cp-ver-modal">
+<div class="cp-box" style="max-width:520px">
+  <div class="cp-mhdr"><h3>🔍 版本管理</h3><button class="cp-btn cp-gy cp-sm" onclick="cpCloseModals()">✕</button></div>
+  <div class="cp-mbody" style="max-height:60vh;overflow-y:auto">
+    <div id="cp-ver-loading" style="text-align:center;padding:20px;color:#656d76;font-size:13px">正在加载版本列表...</div>
+    <div id="cp-ver-list" style="display:none"></div>
+    <div id="cp-ver-log-sec" class="cp-sec" style="display:none;margin-top:12px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">📋 升级日志</div>
+      <div id="cp-ver-log-st" class="cp-ls inf"></div>
+      <pre class="cp-log" id="cp-ver-log-content" style="max-height:150px"></pre>
+    </div>
+  </div>
+  <div class="cp-mfoot">
+    <button class="cp-btn cp-o" onclick="cpCloseModals()">关闭</button>
   </div>
 </div>
 </div>
@@ -488,6 +507,58 @@ function cpCheckUpdate(){
       $('cp-upd-icon').textContent='✅';
     }
     cpCloseRes();
+  });
+}
+
+function cpShowVersions(){
+  $('cp-ver-modal').classList.add('show');
+  $('cp-ver-list').style.display='none';
+  $('cp-ver-loading').style.display='block';
+  $('cp-ver-log-sec').style.display='none';
+  cpAjax(BASE+'/plugin_versions', function(pv){
+    $('cp-ver-loading').style.display='none';
+    $('cp-ver-list').style.display='block';
+    var html='<div style="margin-bottom:12px">';
+    html+='<div style="font-weight:600;font-size:13px;margin-bottom:8px">📦 插件版本列表</div>';
+    html+='<div style="background:#f6f8fa;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:10px">';
+    html+='<span style="color:#656d76">当前版本: </span><strong id="cp-ver-current">加载中...</strong></div>';
+    html+='<div style="display:flex;flex-direction:column;gap:6px" id="cp-ver-items">';
+    pv.versions.forEach(function(v){
+      var isCurrent=(v.version===pv.local_version);
+      var badge=isCurrent?'<span style="background:#dafbe1;color:#1a7f37;font-size:11px;padding:1px 8px;border-radius:10px;font-weight:600">当前</span>':'';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:'+(isCurrent?'#f0fff4':'#f6f8fa')+';border-radius:6px;border:1px solid '+(isCurrent?'#9fdcc5':'#e1e4e8')+'">';
+      html+='<div><span style="font-weight:600;font-size:13px">v'+escHtml(v.version)+'</span> '+badge+'</div>';
+      if(!isCurrent){
+        html+='<button class="cp-btn cp-p cp-sm" onclick="cpUpgradePlugin(\''+escHtml(v.version)+'\')">升级</button>';
+      }
+      html+='</div>';
+    });
+    html+='</div></div>';
+    $('cp-ver-list').innerHTML=html;
+    $('cp-ver-current').textContent=pv.local_version||'未知';
+  }, function(err){
+    $('cp-ver-loading').style.display='none';
+    $('cp-ver-loading').textContent='加载失败: '+escHtml(err);
+  });
+}
+
+function cpUpgradePlugin(version){
+  if(!confirm('确定升级到 v'+version+'？\nLuCI 将自动重启。'))return;
+  var ls=$('cp-ver-log-sec'),le=$('cp-ver-log-content'),se=$('cp-ver-log-st');
+  ls.style.display='block';
+  le.textContent='';
+  se.textContent='正在升级到 v'+version+'...';se.className='cp-ls inf';
+  cpAjax(BASE+'/upgrade_plugin?version='+encodeURIComponent(version), function(r){
+    if(r.status==='ok'){
+      se.textContent='✅ '+r.message;se.className='cp-ls ok';
+      le.textContent=(r.log||'')+'\n升级成功！页面将在 5 秒后刷新...';
+      setTimeout(function(){location.reload()},5000);
+    }else{
+      se.textContent='❌ '+r.message;se.className='cp-ls er';
+      if(r.log)le.textContent=r.log;
+    }
+  }, function(err){
+    se.textContent='请求失败: '+err;se.className='cp-ls er';
   });
 }
 

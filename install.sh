@@ -232,10 +232,19 @@ step "安装 ClawPanel 二进制"
 
 # 获取版本
 if [ "$CP_VERSION" = "latest" ] || [ -z "$CP_VERSION" ]; then
+    # 获取最新 pro 版本（优先 releases/latest，回退遍历）
     LATEST=$(curl -sL --connect-timeout 10 \
-        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" \
-        | grep -o '"tag_name"[^,]*' | grep '"tag_name"' | head -1 \
-        | cut -d'"' -f4 | grep '^pro-' | head -1 || echo "pro-v5.3.3")
+        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest" \
+        2>/dev/null | grep -o '"tag_name"[^,]*' | head -1 \
+        | sed 's/.*"tag_name"[^"]*"//' | tr -d '":' | grep '^pro-' | head -1 || true)
+    if [ -z "$LATEST" ]; then
+        LATEST=$(curl -sL --connect-timeout 10 \
+            "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases?per_page=30" \
+            2>/dev/null | grep -o '"tag_name"[^,]*' \
+            | sed 's/.*"tag_name"[^"]*"//' | tr -d '":' \
+            | grep '^pro-' | head -1 || true)
+    fi
+    [ -z "$LATEST" ] && LATEST="pro-v5.3.3"
 else
     LATEST="$CP_VERSION"
 fi

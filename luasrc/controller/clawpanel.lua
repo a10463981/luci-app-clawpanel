@@ -184,6 +184,14 @@ function index()
 		call("action_check_system"), nil).leaf = true
 	entry({"admin", "services", "clawpanel", "check_update"},
 		call("action_check_update"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "plugin_versions"},
+		call("action_plugin_versions"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "clawpanel_versions"},
+		call("action_clawpanel_versions"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "node_latest"},
+		call("action_node_latest"), nil).leaf = true
+	entry({"admin", "services", "clawpanel", "upgrade_plugin"},
+		call("action_upgrade_plugin"), nil).leaf = true
 end
 
 --===========================================================
@@ -783,12 +791,29 @@ function action_check_update()
 		local_ver = trim(f:read("*a") or "")
 		f:close()
 	end
+	if local_ver == "" then local_ver = "1.0.0" end
 
+	-- 获取所有 tag 并找最新
+	local tags_raw = trim(sh("git ls-remote --tags https://github.com/a10463981/luci-app-clawpanel 2>/dev/null | grep -v '{}' | awk -F'/' '{print $3}' | grep '^v' | sort -V | tail -20"))
 	local latest_ver = local_ver
-	local tag = trim(sh("git ls-remote --tags https://github.com/a10463981/luci-app-clawpanel 2>/dev/null | grep -v '{}' | awk -F'/' '{print $3}' | grep '^v' | sort -V | tail -1"))
-	tag = tag:gsub("^v", ""):gsub("[^%d%.]", "")
-	if tag and tag ~= "" then
-		latest_ver = tag
+	if tags_raw and tags_raw ~= "" then
+		for tag in tags_raw:gmatch("[^\n]+") do
+			local v = tag:gsub("^v", ""):gsub("[^%d%.]", "")
+			if v and v ~= "" then
+				-- semver 比较（简化版）
+				local function ver_cmp(a, b)
+					local ta, tb = {}, {}
+					for w in a:gmatch("%d+") do table.insert(ta, tonumber(w)) end
+					for w in b:gmatch("%d+") do table.insert(tb, tonumber(w)) end
+					for i=1, math.max(#ta, #tb) do
+						local da, db = ta[i] or 0, tb[i] or 0
+						if da ~= db then return da > db end
+					end
+					return false
+				end
+				if ver_cmp(v, latest_ver) then latest_ver = v end
+			end
+		end
 	end
 
 	http.prepare_content("application/json")
@@ -796,5 +821,223 @@ function action_check_update()
 		plugin_current = local_ver,
 		plugin_latest = latest_ver,
 		plugin_has_update = (local_ver ~= latest_ver)
+	})
+end
+
+--===========================================================
+-- 获取所有插件版本（最新优先排序）
+--===========================================================
+function action_plugin_versions()
+	local http = require "luci.http"
+
+	-- 获取所有 tag 并按 semver 排序
+	local tags_raw = trim(sh("git ls-remote --tags https://github.com/a10463981/luci-app-clawpanel 2>/dev/null | grep -v '{}' | awk -F'/' '{print $3}' | grep '^v' | sort -V | uniq"))
+	local versions = {}
+	for tag in tags_raw:gmatch("[^\n]+") do
+		local v = tag:gsub("^v", ""):gsub("[^%d%.]", "")
+		if v and v ~= "" then
+			table.insert(versions, { raw = tag, version = v })
+		end
+	end
+
+	-- 倒序（最新在前）
+	table.sort(versions, function(a, b)
+		-- 简单字符串版本比较
+		local function parse_ver(s)
+			local t={}; for w in s:gmatch("%d+") do table.insert(t, tonumber(w)) end
+			return t
+		end
+		local ta, tb = parse_ver(a.version), parse_ver(b.version)
+		for i=1, math.max(#ta, #tb) do
+			local da = ta[i] or 0
+			local db = tb[i] or 0
+			if da ~= db then return da > db end
+		end
+		return false
+	end)
+
+	-- 获取本地版本
+	local local_ver = "1.0.0"
+	local vf = io.open("/usr/share/clawpanel/VERSION", "r")
+	if vf then
+		local_ver = trim(vf:read("*a") or "")
+		vf:close()
+	end
+
+	http.prepare_content("application/json")
+	http.write_json({
+		versions = versions,
+		local_version = local_ver
+	})
+end
+
+--===========================================================
+-- 获取所有 ClawPanel 版本（pro + lite）
+--===========================================================
+function action_clawpanel_versions()
+	local http = require "luci.http"
+
+	-- 从 GitHub API 获取所有 release
+	local api_url = "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases?per_page=50"
+	local json_str = trim(sh("curl -sL --connect-timeout 8 '" .. api_url .. "' 2>/dev/null"))
+
+	-- 手动解析 JSON（避免依赖 cjson）
+	local releases = {}
+	if json_str and json_str ~= "" and json_str:find('"tag_name"') then
+		for tag_line in json_str:gmatch('"tag_name"[^,]*') do
+			local tag = tag_line:match('"tag_name"%s*:%s*"([^"]+)"')
+			if tag then
+				-- 提取版本号和类型
+				local is_prerelease = false
+				local draft = false
+				-- 找同一条 release 的 draft/prerelease
+				local release_block = json_str:match('"tag_name"%s*:%s*"' .. tag .. '".-}' )
+				if release_block then
+					if release_block:match('"draft"%s*:%s*true') then draft = true end
+					if release_block:match('"prerelease"%s*:%s*true') then is_prerelease = true end
+				end
+				if not draft then
+					table.insert(releases, {
+						tag = tag,
+						is_prerelease = is_prerelease,
+						is_pro = tag:match("^pro%-"),
+						is_lite = tag:match("^lite%-")
+					})
+				end
+			end
+		end
+	end
+
+	-- 如果 API 失败，回退到本地已知版本
+	if #releases == 0 then
+		releases = {
+			{ tag = "pro-v5.3.3", is_prerelease = false, is_pro = true, is_lite = false },
+			{ tag = "pro-v5.3.2", is_prerelease = false, is_pro = true, is_lite = false },
+			{ tag = "lite-v1.0.0", is_prerelease = false, is_pro = false, is_lite = true }
+		}
+	end
+
+	http.prepare_content("application/json")
+	http.write_json({ releases = releases })
+end
+
+--===========================================================
+-- 获取 Node.js 最新 LTS 版本（从 nodejs.org）
+--===========================================================
+function action_node_latest()
+	local http = require "luci.http"
+
+	-- 从 nodejs.org/dist/index.json 获取 LTS 版本
+	local json_str = trim(sh("curl -sL --max-time 8 https://nodejs.org/dist/index.json 2>/dev/null"))
+
+	local latest_lts = "v22.15.1"
+	if json_str and json_str ~= "" then
+		-- 找第一个 lts 版本的 version 字段
+		-- 格式: {"version":"v23.2.0","lts":true,...}
+		for line in json_str:gmatch('{"version":"[^"]+","lts":%s*true[^}]*}') do
+			local v = line:match('"version"%s*:%s*"([^"]+)"')
+			if v then latest_lts = v; break end
+		end
+	end
+
+	http.prepare_content("application/json")
+	http.write_json({ latest = latest_lts })
+end
+
+--===========================================================
+-- 一键升级插件（从 GitHub 下载指定版本）
+--===========================================================
+function action_upgrade_plugin()
+	local http = require "luci.http"
+	local version = http.formvalue("version") or ""
+
+	if version == "" then
+		http.prepare_content("application/json")
+		http.write_json({ status = "error", message = "version cannot be empty" })
+		return
+	end
+
+	-- 清理旧日志
+	sh("rm -f /tmp/clawpanel-plugin-upgrade.log /tmp/clawpanel-plugin-upgrade.exit")
+
+	-- 构造下载 URL（GitHub 源）
+	local url = "https://github.com/a10463981/luci-app-clawpanel/archive/refs/tags/v" .. version .. ".tar.gz"
+	local tmp_dir = "/tmp/luci-app-clawpanel-" .. version
+	local logf = io.open("/tmp/clawpanel-plugin-upgrade.log", "w")
+	local function log(msg)
+		if logf then logf:write(msg .. "\n"); logf:flush() end
+	end
+
+	log("开始升级 luci-app-clawpanel 到 v" .. version)
+	log("下载地址: " .. url)
+
+	-- 下载并解压
+	local tarball = "/tmp/luci-app-clawpanel.tar.gz"
+	local dl_code = trim(sh("curl -fsSL --connect-timeout 30 -o '" .. tarball .. "' '" .. url .. "' 2>&1; echo $?"))
+	if dl_code ~= "0" then
+		log("下载失败 (curl exit code: " .. dl_code .. ")")
+		if logf then logf:close() end
+		http.prepare_content("application/json")
+		http.write_json({ status = "error", message = "Download failed (HTTP " .. dl_code .. ")", log = "下载失败，请检查网络或版本号是否正确" })
+		return
+	end
+
+	-- 解压
+	sh("rm -rf " .. tmp_dir)
+	local ex_code = trim(sh("tar -xzf " .. tarball .. " -C /tmp 2>&1; echo $?"))
+	if ex_code ~= "0" then
+		log("解压失败 (exit code: " .. ex_code .. ")")
+		if logf then logf:close() end
+		http.prepare_content("application/json")
+		http.write_json({ status = "error", message = "Extract failed", log = "解压失败，压缩包可能损坏" })
+		return
+	end
+
+	-- 检查解压结果
+	if sh("test -d " .. tmp_dir) ~= "" then
+		log("解压目录不存在: " .. tmp_dir)
+		if logf then logf:close() end
+		http.prepare_content("application/json")
+		http.write_json({ status = "error", message = "Extracted dir not found", log = "解压目录不存在" })
+		return
+	end
+
+	-- 备份旧文件
+	log("备份旧文件...")
+	sh("cp /usr/lib/lua/luci/controller/clawpanel.lua /tmp/clawpanel.lua.bak 2>/dev/null")
+	sh("cp /usr/lib/lua/luci/view/clawpanel/main.htm /tmp/main.htm.bak 2>/dev/null")
+	sh("cp /usr/lib/lua/luci/model/cbi/clawpanel/basic.lua /tmp/basic.lua.bak 2>/dev/null")
+	sh("cp /usr/share/clawpanel/VERSION /tmp/VERSION.bak 2>/dev/null")
+	log("备份完成")
+
+	-- 安装新文件
+	log("安装新文件...")
+	sh("cp " .. tmp_dir .. "/luasrc/controller/clawpanel.lua /usr/lib/lua/luci/controller/clawpanel.lua 2>&1")
+	sh("cp " .. tmp_dir .. "/luasrc/view/clawpanel/main.htm /usr/lib/lua/luci/view/clawpanel/main.htm 2>&1")
+	sh("cp " .. tmp_dir .. "/luasrc/view/clawpanel/basic.htm /usr/lib/lua/luci/view/clawpanel/basic.htm 2>&1")
+	sh("cp " .. tmp_dir .. "/luasrc/model/cbi/clawpanel/basic.lua /usr/lib/lua/luci/model/cbi/clawpanel/basic.lua 2>&1")
+	sh("cp " .. tmp_dir .. "/root/usr/bin/clawpanel-env /usr/bin/clawpanel-env 2>&1")
+	sh("cp " .. tmp_dir .. "/root/etc/init.d/clawpanel /etc/init.d/clawpanel 2>&1")
+	sh("chmod +x /usr/bin/clawpanel-env /etc/init.d/clawpanel 2>&1")
+
+	-- 写入版本号
+	local vf = io.open("/usr/share/clawpanel/VERSION", "w")
+	if vf then vf:write(version .. "\n"); vf:close() end
+
+	-- 清理
+	sh("rm -rf " .. tmp_dir .. " " .. tarball)
+
+	-- 重启 uhttpd 使新插件生效
+	log("重启 LuCI (uhttpd)...")
+	sh("/etc/init.d/uhttpd restart 2>/dev/null")
+
+	log("升级完成！版本: v" .. version)
+	if logf then logf:close() end
+
+	http.prepare_content("application/json")
+	http.write_json({
+		status = "ok",
+		message = "Plugin upgraded to v" .. version .. ". LuCI restarting...",
+		new_version = version
 	})
 end

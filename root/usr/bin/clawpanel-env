@@ -103,11 +103,19 @@ get_latest_pro_version() {
         echo "$CP_VERSION"
         return
     fi
+    # 从 GitHub API 获取最新 pro 版本（优先 latest API，回退遍历）
     local ver
     ver=$(curl -sL --connect-timeout 10 \
-        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases" \
-        | grep -o '"tag_name"[^,]*' | grep '"tag_name"' | head -1 \
-        | cut -d'"' -f4 | grep '^pro-' | head -1 || true)
+        "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases/latest" \
+        2>/dev/null | grep -o '"tag_name"[^,]*' | head -1 \
+        | sed 's/.*"tag_name"[^"]*"//' | tr -d '":' | grep '^pro-' | head -1 || true)
+    if [ -z "$ver" ]; then
+        ver=$(curl -sL --connect-timeout 10 \
+            "https://api.github.com/repos/zhaoxinyi02/ClawPanel/releases?per_page=30" \
+            2>/dev/null | grep -o '"tag_name"[^,]*' \
+            | sed 's/.*"tag_name"[^"]*"//' | tr -d '":' \
+            | grep '^pro-' | head -1 || true)
+    fi
     if [ -z "$ver" ]; then
         warn "无法获取最新版本，使用 pro-v5.3.3"
         echo "pro-v5.3.3"
