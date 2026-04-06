@@ -416,6 +416,22 @@ OEOF
     uci set clawpanel.main.version="$CP_VER"
     uci set clawpanel.main.openclaw_dir="$OPENCLAW_DIR"
     uci commit clawpanel 2>/dev/null || true
+
+    # 添加防火墙规则：允许 LAN 客户端访问 ClawPanel 面板端口
+    if ! grep -q "Allow-ClawPanel-LAN" /etc/config/firewall 2>/dev/null; then
+        cat >> /etc/config/firewall << 'FWRULE'
+
+# ClawPanel 面板端口 (19527) - LAN 访问
+config rule
+	option name 'Allow-ClawPanel-LAN'
+	option src 'lan'
+	option dest_port '${CP_PORT}'
+	option proto 'tcp'
+	option target 'ACCEPT'
+FWRULE
+        /etc/init.d/firewall reload >/dev/null 2>&1 || true
+    fi
+
     done_ "UCI 配置"
 
     #===========================================================
